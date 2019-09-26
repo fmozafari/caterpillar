@@ -5,74 +5,72 @@
 *-----------------------------------------------------------------------------*/
 #pragma once
 
+#ifdef USE_Z3 
+
 #include "../structures/abstract_network.hpp"
 #include "../synthesis/strategies/action.hpp"
 #include <fmt/format.h>
 
-#ifdef USE_Z3
 #include <z3++.h>
+#include <vector>
+#include <type_traits>
+
+#include <mockturtle/networks/klut.hpp>
 
 
 namespace caterpillar
 {
 using namespace z3;
+using namespace mockturtle;
 
-
-
+template<typename Ntk>
 class z3_pebble_solver
 {
-	struct variables
-	{
-		variables(context& ctx)
-		:s(expr_vector(ctx)), a(expr_vector(ctx)) {}
+  using node = node<Ntk>;
 
-		expr_vector s ;
-		expr_vector a ;
+  struct variables
+  {
+    variables( context& ctx )
+        : s( expr_vector( ctx ) ), a( expr_vector( ctx ) ) {}
+
+    expr_vector s;
+    expr_vector a;
 	};
 
 public:
-    z3_pebble_solver(const abstract_network& net, const int& pebbles, const int& max_weight = 0)
+    z3_pebble_solver(const pebbling_view<Ntk>& net, const int& pebbles, const int& max_weight = 0)
     :_net(net), _pebbles(pebbles), _max_weight(max_weight), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
     {
-    }
-
-		uint32_t node_to_var(uint32_t node)
-		{
-			return node-(_net.num_pis()+2);
+			static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
+    	static_assert( has_foreach_po_v<Ntk>, "Ntk does not implement the foreach_po method" );
+			static_assert( has_foreach_node_v<Ntk>, "Ntk does not implement the foreach_node method" );
+			static_assert( has_foreach_fanin_v<Ntk>, "Ntk does not implement the foreach_fanin method" );
+    
 		}
 
-		uint32_t var_to_node(uint32_t var)
+		uint32_t node_to_var(node n)
 		{
-			return var+_net.num_pis()+2;
+			return n-(_net.num_pis()+1);
+		}
+
+		node var_to_node(uint32_t var)
+		{
+			return var+_net.num_pis()+1;
 		}
 
 		expr_vector new_variable_set(std::string s)
 		{
 			expr_vector x (ctx);
 
-			_net.foreach_node([&](auto node){
-				if (node >= _net.num_pis()+2)
-				{
-					auto x_name = fmt::format("{}_{}_{}", s, num_steps, node_to_var(node)); 
-					x.push_back(ctx.bool_const(x_name.c_str()));
-				}
+			_net.foreach_gate([&](auto gate){
+	
+				auto x_name = fmt::format("{}_{}_{}", s, num_steps, node_to_var(gate));
+				x.push_back( ctx.bool_const( x_name.c_str() ) );
+				
 			});
 
 			return x;
 		}
-		/*expr_vector weight_set()
-		{
-			expr_vector w (ctx);
-
-			_net.foreach_node([&](auto node){
-				if (node >= _net.num_pis()+2)
-				{
-					w.push_back(ctx.int_val(_net.value(node)));
-				}
-			});
-
-			return w;
-		}*/
 
     void init()
     {
@@ -98,17 +96,16 @@ public:
 
 			for (auto var=0u ; var<next.s.size(); var++)
 			{
-				_net.foreach_fanin(var_to_node(var), [&] (auto sig)
-				{
-					auto ch_node = _net.get_node(sig);
-					if (ch_node >= _net.num_pis()+2)
+				_net.foreach_fanin( var_to_node( var ), [&]( auto sig ) {
+					auto ch_node = _net.get_node( sig );
+					if ( ch_node >= _net.num_pis() + 1 )
 					{
-						slv.add(implies( current.s[var] != next.s[var], (current.s[node_to_var(ch_node)] && next.s[node_to_var(ch_node)])));
+						slv.add( implies( current.s[var] != next.s[var], ( current.s[node_to_var( ch_node )] && next.s[node_to_var( ch_node )] ) ) );
 					}
+				} );
 
-				});
-				slv.add(implies(current.s[var] != next.s[var], next.a[var]));
-				slv.add(implies(current.s[var] == next.s[var], !next.a[var]));
+				slv.add( implies( current.s[var] != next.s[var], next.a[var] ) );
+				slv.add( implies( current.s[var] == next.s[var], !next.a[var] ) );
 			}
 
 			slv.add(atmost(next.s, _pebbles));
@@ -122,7 +119,7 @@ public:
 			{
 				for (uint32_t i=0; i<current.s.size(); i++)
 				{
-					for (uint32_t r=0; r<_net.value(var_to_node(i)); r++)
+					for (uint32_t r=0; r<_net.get_weight(var_to_node(i)); r++)
 					{
 						clause.push_back(ctx.bool_const(fmt::format("a_{}_{}", k, i).c_str()));
 					}
@@ -155,7 +152,7 @@ public:
 			}
 
 			/* add weight clause */
-			if(_max_weight != 0) slv.add(atmost(weight_expr(), _max_weight));
+			if(_max_weight != 0) slv.add(atmost(weight_expr(), _max_weight+1));
 		
 			/* check result (drop final clauses if unsat)*/
 			auto result = slv.check();
@@ -190,21 +187,21 @@ public:
 					{
 						if (a_var.is_true()) 
 						{
-							w += _net.value(var_to_node(n));
-							std::cout << "y" << "+" << _net.value(var_to_node(n)) << " " ;
+							w += _net.get_weight(var_to_node(n));
+							std::cout << "y" << "+" << _net.get_weight(var_to_node(n)) << " " ;
 						}
 						else std::cout << "n" << "+0 ";
 					}
 					
 				}
 			}
-			std::cout << fmt::format("TOT.Weight = {}\n", w);
+			std::cout << fmt::format("\nTOT.Weight = {}\n", w);
 		}
 
-		std::vector<std::pair<mockturtle::node<abstract_network>, mapping_strategy_action>> extract_result( bool verbose)
+		std::vector<std::pair<mockturtle::node<pebbling_view<Ntk>>, mapping_strategy_action>> extract_result( bool verbose)
 		{
 			model m = slv.get_model();
-			std::vector<std::pair<mockturtle::node<abstract_network>, mapping_strategy_action>> steps;
+			std::vector<std::pair<mockturtle::node<pebbling_view<Ntk>>, mapping_strategy_action>> steps;
 
 			for (uint32_t k = 0; k <num_steps+1; k++)
 			{
@@ -257,7 +254,7 @@ public:
 
 
 private:
-const abstract_network _net;
+const pebbling_view<Ntk> _net;
 const int _pebbles;
 const int _max_weight;
 
@@ -269,6 +266,44 @@ variables current;
 variables next;
 
 };
+
+template<>
+inline uint32_t z3_pebble_solver<klut_network>::node_to_var(mockturtle::node<klut_network> n)
+{
+	return n-(this ->_net.num_pis()+2);
+}
+
+template<>
+inline mockturtle::node<klut_network> z3_pebble_solver<klut_network>::var_to_node(uint32_t var)
+{
+	return var+this ->_net.num_pis()+2;
+}
+
+template<>
+inline void z3_pebble_solver<klut_network>::add_step()
+{
+	num_steps+=1;
+
+	next.s = new_variable_set("s");
+	next.a = new_variable_set("a");
+
+	for (auto var=0u ; var<next.s.size(); var++)
+	{
+		_net.foreach_fanin( var_to_node( var ), [&]( auto sig ) {
+			auto ch_node = _net.get_node( sig );
+			if ( ch_node >= _net.num_pis() + 2 )
+			{
+				slv.add( implies( current.s[var] != next.s[var], ( current.s[node_to_var( ch_node )] && next.s[node_to_var( ch_node )] ) ) );
+			}
+		} );
+
+		slv.add( implies( current.s[var] != next.s[var], next.a[var] ) );
+		slv.add( implies( current.s[var] == next.s[var], !next.a[var] ) );
+	}
+
+	slv.add(atmost(next.s, _pebbles));
+	current = next;
+}
 
 }
 #endif
