@@ -27,6 +27,9 @@ struct pebbling_mapping_strategy_params
   /*! \brief Maximum number of pebbles to use, if supported by mapping strategy (0 means no limit). */
   uint32_t pebble_limit{0u};
 
+  /*! \brief Maximum number of steps */
+  uint32_t max_steps{100000};
+
   /*! \brief Conflict limit for the SAT solver (0 means no limit). */
   uint32_t conflict_limit{0u};
 
@@ -69,8 +72,7 @@ public:
     std::vector<std::pair<mockturtle::node<LogicNetwork>, mapping_strategy_action>> store_steps;
 
     auto limit = ps.pebble_limit;
-
-
+    unsigned max_steps = ps.max_steps;
     while ( true )
     {
       Solver solver( ntk, limit );
