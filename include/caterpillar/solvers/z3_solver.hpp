@@ -118,7 +118,7 @@ public:
 			slv.add( implies( current.s[var] == next.s[var], !next.a[var] ) );
 		}
 
-		slv.add(atmost(next.s, _pebbles));
+		if(_pebbles != 0)	slv.add(atmost(next.s, _pebbles));
 		current = next;
 	}
 
@@ -312,7 +312,7 @@ inline void z3_pebble_solver<klut_network>::add_step()
 		slv.add( implies( current.s[var] == next.s[var], !next.a[var] ) );
 	}
 
-	slv.add(atmost(next.s, _pebbles));
+	if (_pebbles != 0)	slv.add( atmost( next.s, _pebbles ) );
 	current = next;
 }
 
