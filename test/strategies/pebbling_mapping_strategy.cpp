@@ -72,9 +72,12 @@ TEST_CASE( "Pebble mapping strategy for 3-bit sorting network z3", "[pebbling_ma
   sorter.create_po( w6 );
 
   netlist<stg_gate> circ;
-  pebbling_mapping_strategy<aig_network, z3_pebble_solver<aig_network>> strategy;
+  pebbling_mapping_strategy_params psp;
+  psp.pebble_limit = 18;
+  pebbling_mapping_strategy<aig_network, z3_pebble_solver<aig_network>> strategy (psp);
   logic_network_synthesis_stats st;
-  logic_network_synthesis(circ, sorter, strategy, {}, {}, &st);
+
+  logic_network_synthesis( circ, sorter, strategy, {}, {}, &st );
   CHECK( circ.num_gates() != 0 );
 
   const auto sorter2 = circuit_to_logic_network<aig_network>(circ, st.i_indexes, st.o_indexes);

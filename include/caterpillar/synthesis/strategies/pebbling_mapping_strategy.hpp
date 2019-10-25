@@ -91,7 +91,7 @@ public:
         bar( std::min<uint32_t>( solver.current_step(), 100 ), solver.current_step() );
 
         solver.add_step();
-        result = solver.solve(); //ps.conflict_limit );
+        result = solver.solve(); 
       } while ( result == solver.unsat() );
 
       if ( result == solver.unknown() )

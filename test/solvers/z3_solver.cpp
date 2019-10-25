@@ -2,6 +2,8 @@
 
 #include <caterpillar/structures/pebbling_view.hpp>
 #include <caterpillar/solvers/z3_solver.hpp>
+#include <caterpillar/synthesis/strategies/mapping_strategy.hpp>
+#include <caterpillar/synthesis/strategies/pebbling_mapping_strategy.hpp>
 
 #include <mockturtle/networks/xag.hpp>
 #include <mockturtle/networks/aig.hpp>
