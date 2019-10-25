@@ -22,12 +22,15 @@ namespace caterpillar
 {
 
 template<typename Network>
-class pebble_solver
+class bsat_pebble_solver
 {
-  using Steps = std::vector<std::pair<mockturtle::node<Network>, mapping_strategy_action>>;
-
+  
 public:
-  pebble_solver( Network const& net, uint32_t pebbles )
+
+  using Steps = std::vector<std::pair<mockturtle::node<Network>, mapping_strategy_action>>;
+  using result = percy::synth_result;
+
+  bsat_pebble_solver( Network const& net, uint32_t pebbles )
       : index_to_gate( net.num_gates() ),
         gate_to_index( net ),
         _net( net ),
@@ -50,6 +53,12 @@ public:
   {
     return _nr_steps;
   }
+
+  result unsat(){ return result::failure; }
+
+  result sat(){ return result::success; }
+
+  result unknown(){ return result::timeout; }
 
   inline void add_edge_clause( int p, int p_n, int ch, int ch_n )
   {
@@ -75,7 +84,7 @@ public:
     solver.add_clause( h, h + 3 );
   }
 
-  void initialize()
+  void init()
   {
     solver.set_nr_vars( _nr_gates + extra );
 
@@ -167,7 +176,7 @@ public:
     }
   }
 
-  percy::synth_result solve( uint32_t conflict_limit )
+  result solve( uint32_t conflict_limit=0 )
   {
     std::vector<int> p( _nr_gates );
     _net.foreach_gate( [&]( auto n, auto i ) {

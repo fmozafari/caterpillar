@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "mapping_strategy.hpp"
-#include "../../solvers/bsat_solver.hpp"
 
 #include <mockturtle/utils/progress_bar.hpp>
 
@@ -31,11 +30,14 @@ struct pebbling_mapping_strategy_params
   /*! \brief Conflict limit for the SAT solver (0 means no limit). */
   uint32_t conflict_limit{0u};
 
-  /*! \brief Increment pebble numbers, if timeout. */
-  bool increment_on_timeout{false};
+  /*! \brief Increment pebble numbers, if a failure occurs. */
+  bool increment_on_failure{false};
 
   /*! \brief Decrement pebble numbers, if satisfiable. */
   bool decrement_on_success{false};
+
+  /*! \brief Maximum number of steps allowed. */
+  uint32_t max_steps{1000};
 };
 
 /*!
@@ -44,7 +46,7 @@ struct pebbling_mapping_strategy_params
   The problem is encoded as a SAT problem. Details can be found in :cite:`MS19`.
   \endverbatim
 */
-template<class LogicNetwork>
+template<class LogicNetwork, class Solver>
 class pebbling_mapping_strategy : public mapping_strategy<LogicNetwork>
 {
 public:
@@ -62,34 +64,39 @@ public:
 
   bool compute_steps( LogicNetwork const& ntk ) override
   {
-    assert( !ps.decrement_on_success || !ps.increment_on_timeout );
+    assert( !ps.decrement_on_success || !ps.increment_on_failure );
+
     std::vector<std::pair<mockturtle::node<LogicNetwork>, mapping_strategy_action>> store_steps;
+
     auto limit = ps.pebble_limit;
-    unsigned max_steps = 100;
+
+
     while ( true )
     {
-      pebble_solver<LogicNetwork> solver( ntk, limit );
-      solver.initialize();
+      Solver solver( ntk, limit );
+      solver.init();
 
       mockturtle::progress_bar bar( 100, "|{0}| current step = {1}", ps.progress );
-      percy::synth_result result;
+
+      typename Solver::result result;
 
       do
       {
-        if ( solver.current_step() >= max_steps )
+        if ( solver.current_step() >= ps.max_steps )
         {
-          result = percy::timeout;
+          result = solver.unknown();
           break;
         }
 
         bar( std::min<uint32_t>( solver.current_step(), 100 ), solver.current_step() );
-        solver.add_step();
-        result = solver.solve( ps.conflict_limit );
-      } while ( result == percy::failure );
 
-      if ( result == percy::timeout )
+        solver.add_step();
+        result = solver.solve(); //ps.conflict_limit );
+      } while ( result == solver.unsat() );
+
+      if ( result == solver.unknown() )
       {
-        if ( ps.increment_on_timeout )
+        if ( ps.increment_on_failure )
         {
           limit++;
           continue;
@@ -97,7 +104,7 @@ public:
         else if ( !ps.decrement_on_success )
           return false;
       }
-      else if ( result == percy::success )
+      else if ( result == solver.sat() )
       {
         this->steps() = solver.extract_result();
         if ( ps.decrement_on_success )

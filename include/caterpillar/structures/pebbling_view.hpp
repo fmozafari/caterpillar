@@ -8,6 +8,8 @@
   \file pebbling_view.hpp
   \brief Implements weights for networks
 */
+#pragma once
+
 #include <mockturtle/views/immutable_view.hpp>
 
 #include <iostream>
