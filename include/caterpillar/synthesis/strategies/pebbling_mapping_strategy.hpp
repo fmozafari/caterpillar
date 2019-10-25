@@ -39,8 +39,6 @@ struct pebbling_mapping_strategy_params
   /*! \brief Decrement pebble numbers, if satisfiable. */
   bool decrement_on_success{false};
 
-  /*! \brief Maximum number of steps allowed. */
-  uint32_t max_steps{1000};
 };
 
 /*!
