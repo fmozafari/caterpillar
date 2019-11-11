@@ -42,6 +42,7 @@
 #include "caterpillar/synthesis/lhrs.hpp"
 #include "caterpillar/synthesis/satbased_cnotrz.hpp"
 #include "caterpillar/synthesis/stg_to_mcx.hpp"
+#include "caterpillar/synthesis/decompose_with_ands.hpp"
 #include "caterpillar/synthesis/strategies/action.hpp"
 #include "caterpillar/synthesis/strategies/bennett_mapping_strategy.hpp"
 #include "caterpillar/synthesis/strategies/best_fit_mapping_strategy.hpp"
