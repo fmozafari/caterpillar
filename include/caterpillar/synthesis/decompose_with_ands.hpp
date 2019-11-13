@@ -2,6 +2,7 @@
 #include <tweedledum/gates/mcmt_gate.hpp>
 #include <caterpillar/structures/stg_gate.hpp>
 
+#pragma once 
 namespace caterpillar
 {
   using namespace tweedledum;
