@@ -9,7 +9,7 @@
 namespace caterpillar::detail
 {
   template<class QuantumCircuit>
-  int t_cost( QuantumCircuit const& netlist)
+  inline int t_cost( QuantumCircuit const& netlist)
   {
     int count = 0;
     netlist.foreach_cgate([&](const auto gate)
@@ -23,7 +23,7 @@ namespace caterpillar::detail
     return count;
   }
 
-  int t_cost( const int tof_controls, const int lines )
+  inline int t_cost( const int tof_controls, const int lines )
   {
     switch ( tof_controls )
     {

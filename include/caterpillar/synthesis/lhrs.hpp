@@ -197,6 +197,40 @@ public:
                 {  
                   compute_node_inplace( node, t );
                 }
+              },
+              [&]( compute_action_with_copy const& action ) {
+                const auto t = node_to_qubit[node] = request_ancilla();
+
+                if ( ps.verbose )
+                {
+                  std::cout << "[i] compute " << ntk.node_to_index( node ) << " in qubit " << t;
+                  std::cout << " copying nodes: ";
+                  for(auto l : action.leaves)
+                  {
+                    std::cout << l << " ";
+                  }
+                  std::cout << "\n";
+                  
+                }
+
+                compute_with_copy (node, action.leaves, t);
+              },
+              [&]( uncompute_action_with_copy const& action ) {
+                const auto t = node_to_qubit[node];
+
+                if ( ps.verbose )
+                {
+                  std::cout << "[i] uncompute " << ntk.node_to_index( node ) << " in qubit " << t;
+                  std::cout << " copying nodes: ";
+                  for(auto l : action.leaves)
+                  {
+                    std::cout << l << " ";
+                  }
+                  std::cout << "\n";
+                }
+
+                compute_with_copy(node, action.leaves, t);
+                release_ancilla( t );
               }},
           action );
     } );
@@ -310,6 +344,64 @@ private:
         qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( node_to_qubit[control] ), tweedledum::qubit_id( t ) );
       }
     }
+  }
+
+  void compute_with_copy( mt::node<LogicNetwork> const& node, std::vector<uint32_t> leaves, uint32_t t  )
+  {
+    std::vector<std::pair<Qubit, bool>> controls;// q, inv?
+    std::vector<std::pair<uint32_t, uint32_t>> copies;// c, t
+
+    ntk.foreach_fanin(node, [&] (const auto& f) 
+    {
+      if( std::find(leaves.begin(), leaves.end(), ntk.get_node(f)) != leaves.end())
+      {
+        auto target = request_ancilla();
+        controls.push_back({target, ntk.is_complemented( f )});
+
+        copies.push_back({node_to_qubit[ntk.get_node(f)], target});
+      }
+      else
+      {
+        auto control = node_to_qubit[ntk.node_to_index( ntk.get_node( f ) )];
+        controls.push_back({tweedledum::qubit_id(control), ntk.is_complemented( f )});
+      }
+
+    });
+
+    for( auto c : copies)
+    {
+      qnet.add_gate( 
+        tweedledum::gate::cx, 
+        tweedledum::qubit_id( c.first ), 
+        tweedledum::qubit_id( c.second ) );
+    }
+
+    std::vector<Qubit> and_controls;
+    for (auto c: controls)
+    {
+      if(c.second)
+        qnet.add_gate(tweedledum::gate::pauli_x, tweedledum::qubit_id(c.first) );
+      
+      and_controls.push_back(c.first);
+    }
+
+    qnet.add_gate( tweedledum::gate::mcx, and_controls, SetQubits{{t}});
+
+    for (auto c : controls)
+    {
+      if(c.second)
+        qnet.add_gate(tweedledum::gate::pauli_x, tweedledum::qubit_id(c.first) );
+    }
+    for( auto c : copies)
+    {
+      qnet.add_gate( 
+        tweedledum::gate::cx, 
+        tweedledum::qubit_id( c.first ), 
+        tweedledum::qubit_id( c.second ) );
+      
+      release_ancilla(c.second);
+    }
+
   }
 
 

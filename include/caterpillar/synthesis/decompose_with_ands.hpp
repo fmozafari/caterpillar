@@ -26,6 +26,12 @@ namespace caterpillar
       q_to_rev_id[cq] = q;
     });
 
+    //operation Circuit(): Unit{
+          //using (qs = Qubit[numberthatIhave])
+    //{
+
+     // ... close twice at end
+
 
     rnet.foreach_cgate([&] (const auto rgate)
     {
@@ -37,6 +43,7 @@ namespace caterpillar
       if (rgate.gate.num_controls() == 1)
       {
         //CNOT
+        //CNOT (qs[cs[0]], qs[ts[0]] );
         qnet.add_gate(gate::cx, 
           q_to_rev_id[cs[0]], 
           q_to_rev_id[ts[0]]);
@@ -48,7 +55,7 @@ namespace caterpillar
         auto a = q_to_rev_id[ cs[0] ];
         auto b = q_to_rev_id[ cs[1] ];
         auto c = q_to_rev_id[ ts[0] ];
-
+        //AND (qs[cs[0]], qs[cs[1]], qs[ts[0]]);
         if (std::find(ash.begin(), ash.end(), std::make_tuple(a, b, c)) == ash.end())
         {
           qnet.add_gate(gate::hadamard, c);
@@ -74,6 +81,7 @@ namespace caterpillar
           // worst case uncomputing 
           // >>>>>>>>>>>>>> error in functionality <<<<<<<<<<<<<<<<<<<
           //creg out[1];
+          // Adjoint AND(...);
           qnet.add_gate(gate::hadamard, c);
           qnet.add_gate(gate::cz, a, b);
           qnet.add_gate(gate::pauli_x, c);

@@ -151,11 +151,12 @@ class aig_mapping_strategy : public mapping_strategy<mockturtle::aig_network>
   }
 
   aig_mapping_strategy_stats* stp;
+  bool enable_extra_ancillae;
 
 public:
   // constructor 
-  aig_mapping_strategy( aig_mapping_strategy_stats* stp = nullptr)
-    : stp(stp){}
+  aig_mapping_strategy(aig_mapping_strategy_stats* stp = nullptr, bool enable_extra_ancillae = false)
+    : stp(stp), enable_extra_ancillae(enable_extra_ancillae) {}
 
   bool compute_steps( mockturtle::aig_network const& ntk ) override
   {
@@ -179,62 +180,124 @@ public:
     //extract nodes and leaves for each level
     auto lvl_fi =  get_level_info (d_aig); 
 
-    
-    for(auto lvl : lvl_fi)
+    if(enable_extra_ancillae)
     {
-      Graph <node_t> cgraph = get_compatibility_graph( lvl );
-
-      // get the cliques
-      caterpillar::detail::Solution<node_t> solution;
-      caterpillar::detail::solve <node_t> ({ {} }, cgraph , { {} }, std::bind (caterpillar::detail::aggregator <node_t>, std::ref (solution), _1, _2, _3) );
-
-      while( ! solution.empty() )
+      for(auto lvl : lvl_fi)
       {
-        //decrescent order
-        solution.sort( [&]  (const Graph <node_t>& first, const Graph <node_t>&  second) -> bool
+        auto visited = std::bitset<20>();
+        
+        for( auto v : lvl)
         {
-          return ( first.size() > second.size() );
-        });
-
-
-        auto clique = *solution.begin();
-
-        auto cc = compute(clique, true, st);
-  
-        it = steps().insert(it, cc.begin(), cc.end());
-        it = it+cc.size();
-
-        if( (clique.size() != 1)  ||
-            std::find (drivers.begin(), drivers.end(), clique.begin()->id ) == drivers.end() )
-        {
-          auto cu = compute(clique, false, st);
-          it = steps().insert(it, cu.begin(), cu.end());
-        }
-          
-        //remove clique from solution
-        solution.remove(clique);
-
-        for (auto v : clique)
-        {
-          for (auto& g : solution)
+          /* the node does not have any children in common with previously evaluated nodes */
+          auto merge = visited & v.mask;
+          if( merge.none() )
           {
-            if (std::find(g.begin(), g.end(), v) != g.end()) 
+            it = steps().insert(it, {v.n, compute_action{}});
+            it += 1;
+
+            if( std::find (drivers.begin(), drivers.end(), v.n ) == drivers.end() )
             {
-              g.remove(v);
+              it = steps().insert(it, {v.n, uncompute_action{}});
             }
             
+            visited |= v.mask;
+          }
+          /* the node has one or two occupied children */
+          else
+          {
+            std::vector<uint32_t> leaves; // one or two fanin nodes
+  
+            for (auto i = 0u; i < d_aig.size() - d_aig.num_pis(); i++)
+            {
+              if (merge.test(i))
+              {
+                leaves.push_back(i);
+              }
+              else 
+              {
+                visited.set(i);
+              }
+            }
+
+
+            it = steps().insert(it, {v.n, compute_action_with_copy{leaves}});
+            it += 1;
+
+            if( std::find (drivers.begin(), drivers.end(), v.n ) == drivers.end() )
+            {
+              it = steps().insert(it, {v.n, uncompute_action_with_copy{leaves}});
+            }
+          
           }
         }
       }
-    }
 
-    if (stp) 
+      return 1;
+
+    }
+    else
     {
-      *stp = st;
-    }
+      
 
-    return true;
+      for(auto lvl : lvl_fi)
+      {
+        Graph <node_t> cgraph = get_compatibility_graph( lvl );
+
+        // get the cliques
+        caterpillar::detail::Solution<node_t> solution;
+        caterpillar::detail::solve <node_t> ({ {} }, cgraph , { {} }, std::bind (caterpillar::detail::aggregator <node_t>, std::ref (solution), _1, _2, _3) );
+
+        while( ! solution.empty() )
+        {
+          //decrescent order
+          solution.sort( [&]  (const Graph <node_t>& first, const Graph <node_t>&  second) -> bool
+          {
+            return ( first.size() > second.size() );
+          });
+
+
+          auto clique = *solution.begin();
+
+          auto cc = compute(clique, true, st);
+    
+          it = steps().insert(it, cc.begin(), cc.end());
+          it = it+cc.size();
+
+          if( (clique.size() != 1)  ||
+              std::find (drivers.begin(), drivers.end(), clique.begin()->id ) == drivers.end() )
+          {
+            auto cu = compute(clique, false, st);
+            it = steps().insert(it, cu.begin(), cu.end());
+          }
+            
+          //remove clique from solution
+          solution.remove(clique);
+
+          for (auto v : clique)
+          {
+            for (auto& g : solution)
+            {
+              if (std::find(g.begin(), g.end(), v) != g.end()) 
+              {
+                g.remove(v);
+              }
+              
+            }
+          }
+        }
+      }
+
+      
+      if (stp) 
+      {
+        *stp = st;
+      }
+
+      return true;
+    }
   }
+    
+    
 };
 
 } // namespace caterpillar

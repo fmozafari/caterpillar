@@ -26,7 +26,6 @@ struct compute_action
    */
   std::optional<std::pair<kitty::dynamic_truth_table, std::vector<uint32_t>>> cell_override;
 
-  
 };
 
 struct uncompute_action
@@ -54,7 +53,24 @@ struct uncompute_inplace_action
   std::optional<std::vector<uint32_t>> leaves;
 };
 
-using mapping_strategy_action = std::variant<compute_action, uncompute_action, compute_inplace_action, uncompute_inplace_action>;
+struct compute_action_with_copy
+{
+  std::vector<uint32_t> leaves;
+};
+
+struct uncompute_action_with_copy
+{
+  std::vector<uint32_t> leaves;
+};
+
+using mapping_strategy_action = 
+  std::variant<
+    compute_action, 
+    uncompute_action, 
+    compute_inplace_action, 
+    uncompute_inplace_action, 
+    compute_action_with_copy, 
+    uncompute_action_with_copy>;
 
 namespace detail
 {
