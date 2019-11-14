@@ -120,7 +120,7 @@ public:
       auto const& pprm = kitty::esop_from_pprm( function );
       auto const& pkrm = kitty::esop_from_optimum_pkrm( function );
 
-      if ( function.num_vars() >= 5 && pkrm.size() >= 8 )
+      if ( function.num_vars() > 5 && pkrm.size() >= 8 )
       {
         esop = pkrm;
         cache.emplace( function, esop );
