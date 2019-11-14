@@ -84,7 +84,7 @@ TEST_CASE("aig_mapping2" , "[map small aig with min depth-2]")
   ps.verbose = false;
 
   aig_mapping_strategy_stats stm;
-  aig_mapping_strategy strategy (&stm, true);
+  aig_mapping_strategy strategy (&stm);
 
   logic_network_synthesis( qnet, aig, strategy, {}, ps, &st );
 
@@ -118,7 +118,7 @@ TEST_CASE("synthesize aig enabling extra ancillae", "[enabling_ancillae]")
 
   logic_network_synthesis_params ps;
   logic_network_synthesis_stats st;
-  ps.verbose = true;
+  ps.verbose = false;
 
   aig_mapping_strategy strategy ({}, true);
 

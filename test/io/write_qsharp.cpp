@@ -31,8 +31,22 @@ TEST_CASE("write xag in Q#", "[write xag in Q#]")
   xag_mapping_strategy strategy;
   logic_network_synthesis( rnet, xag, strategy, {}, ps, &st );
 
-  write_qsharp(rnet, std::cout, "Test1");
+  std::ostringstream out;
+  write_qsharp(rnet, out, "Test1");
+
+  CHECK( out.str() == "operation Test1(): Unit\n"
+                      "{\n"
+                      "  using (qs = Qubit[5])\n"
+                      "  {\n"
+                      "    AND(qs[0], qs[1], qs[3]);\n"
+                      "    CNOT(qs[3], qs[4] );\n"
+                      "    CNOT(qs[2], qs[4] );\n"
+                      "    Adjoint AND(qs[0], qs[1], qs[3]);\n"
+                      "\n"
+                      "  }\n"
+                      "}\n" );
 }
+
 
 TEST_CASE("write xag with negations in Q#", "[xag with negations in Q#]")
 {
@@ -65,7 +79,29 @@ TEST_CASE("write xag with negations in Q#", "[xag with negations in Q#]")
 
   xag_mapping_strategy strategy;
   logic_network_synthesis( rnet, xag, strategy, {}, ps, &st );
-  write_qsharp(rnet, std::cout, "Test2");
-  write_unicode(rnet);
+
+  std::ostringstream out;
+  write_qsharp(rnet, out, "Test2");
+  CHECK(out.str() ==  "operation Test2(): Unit\n"
+                      "{\n"
+                      "  using (qs = Qubit[6])\n"
+                      "  {\n"
+                      "    CNOT(qs[0], qs[3] );\n"
+                      "    CNOT(qs[1], qs[3] );\n"
+                      "    CNOT(qs[4], qs[3] );\n"
+                      "    CNOT(qs[0], qs[2] );\n"
+                      "    CNOT(qs[1], qs[2] );\n"
+                      "    CNOT(qs[4], qs[2] );\n"
+                      "    AND(qs[3], qs[2], qs[5]);\n"
+                      "    CNOT(qs[0], qs[2] );\n"
+                      "    CNOT(qs[1], qs[2] );\n"
+                      "    CNOT(qs[4], qs[2] );\n"
+                      "    CNOT(qs[0], qs[3] );\n"
+                      "    CNOT(qs[1], qs[3] );\n"
+                      "    CNOT(qs[4], qs[3] );\n"
+                      "    NOT(qs[5]);\n"
+                      "\n"
+                      "  }\n"
+                      "}\n");
 
 }
