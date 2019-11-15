@@ -131,3 +131,35 @@ TEST_CASE("synthesize aig enabling extra ancillae", "[enabling_ancillae]")
   CHECK(tt_aig == tt_ntk);
 
 }
+
+TEST_CASE("synthesize aig enabling extra ancillae, multiple conflicts", "[enabling_ancillae_mult_confl]")
+{
+  aig_network aig;
+
+  auto a = aig.create_pi();
+  auto b = aig.create_pi();
+
+  auto n1 = aig.create_and(!a, b);
+  auto n2 = aig.create_and(a, !b);
+  auto n3 = aig.create_and(n1, n2);
+
+  aig.create_po(n3);
+
+  netlist<stg_gate> qnet;
+
+  logic_network_synthesis_params ps;
+  logic_network_synthesis_stats st;
+  ps.verbose = true;
+
+  aig_mapping_strategy strategy ({}, true);
+
+  logic_network_synthesis( qnet, aig, strategy, {}, ps, &st );
+
+  auto tt_aig = simulate<kitty::static_truth_table<3>>( aig );
+  const auto ntk = circuit_to_logic_network<aig_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<3>>( *ntk );
+
+  write_unicode(qnet);
+  CHECK(tt_aig == tt_ntk);
+
+}

@@ -34,7 +34,7 @@ TEST_CASE("write xag in Q#", "[write xag in Q#]")
   std::ostringstream out;
   write_qsharp(rnet, out, "Test1");
 
-  CHECK( out.str() == "operation Test1(): Unit\n"
+  CHECK( out.str() == "operation FunctionTest1(): Unit\n"
                       "{\n"
                       "  using (qs = Qubit[5])\n"
                       "  {\n"
@@ -82,7 +82,7 @@ TEST_CASE("write xag with negations in Q#", "[xag with negations in Q#]")
 
   std::ostringstream out;
   write_qsharp(rnet, out, "Test2");
-  CHECK(out.str() ==  "operation Test2(): Unit\n"
+  CHECK(out.str() ==  "operation FunctionTest2(): Unit\n"
                       "{\n"
                       "  using (qs = Qubit[6])\n"
                       "  {\n"
@@ -99,7 +99,7 @@ TEST_CASE("write xag with negations in Q#", "[xag with negations in Q#]")
                       "    CNOT(qs[0], qs[3] );\n"
                       "    CNOT(qs[1], qs[3] );\n"
                       "    CNOT(qs[4], qs[3] );\n"
-                      "    NOT(qs[5]);\n"
+                      "    X(qs[5]);\n"
                       "\n"
                       "  }\n"
                       "}\n");

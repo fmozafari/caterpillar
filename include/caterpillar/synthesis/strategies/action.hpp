@@ -55,12 +55,12 @@ struct uncompute_inplace_action
 
 struct compute_action_with_copy
 {
-  std::vector<uint32_t> leaves;
+  std::vector< std::pair< uint32_t, std::vector<uint32_t> > >  leaves;
 };
 
 struct uncompute_action_with_copy
 {
-  std::vector<uint32_t> leaves;
+  std::vector< std::pair< uint32_t, std::vector<uint32_t> > >  leaves;
 };
 
 using mapping_strategy_action = 

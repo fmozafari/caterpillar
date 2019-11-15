@@ -184,56 +184,52 @@ public:
     {
       for(auto lvl : lvl_fi)
       {
-        auto visited = std::bitset<20>();
-        
-        for( auto v : lvl)
+        /* the level only contains the output node */
+        if (lvl.size() == 1 && ( std::find(drivers.begin(), drivers.end(), lvl[0].n) != drivers.end() ))
         {
-          /* the node does not have any children in common with previously evaluated nodes */
-          auto merge = visited & v.mask;
-          if( merge.none() )
-          {
-            it = steps().insert(it, {v.n, compute_action{}});
-            it += 1;
-
-            if( std::find (drivers.begin(), drivers.end(), v.n ) == drivers.end() )
-            {
-              it = steps().insert(it, {v.n, uncompute_action{}});
-            }
-            
-            visited |= v.mask;
-          }
-          /* the node has one or two occupied children */
-          else
-          {
-            std::vector<uint32_t> leaves; // one or two fanin nodes
-  
-            for (auto i = 0u; i < d_aig.size() - d_aig.num_pis(); i++)
-            {
-              if (merge.test(i))
-              {
-                leaves.push_back(i);
-              }
-              else 
-              {
-                visited.set(i);
-              }
-            }
-
-
-            it = steps().insert(it, {v.n, compute_action_with_copy{leaves}});
-            it += 1;
-
-            if( std::find (drivers.begin(), drivers.end(), v.n ) == drivers.end() )
-            {
-              it = steps().insert(it, {v.n, uncompute_action_with_copy{leaves}});
-            }
-          
-          }
+          it = steps().insert(it, {lvl[0].n, compute_action{}});
+          it += 1;
         }
+        else
+        {
+          auto visited = std::bitset<20>();
+        
+          std::vector< std::pair< uint32_t, std::vector<uint32_t> > > leaves;
+          for( auto v : lvl)
+          {
+            /* the node does not have any children in common with previously evaluated nodes */
+            auto merge = visited & v.mask;
+            if( merge.none() )
+            {
+              visited |= v.mask;
+              leaves.push_back({v.n, {}});
+            }
+            /* the node has one or two occupied children */
+            else
+            {
+              std::vector<uint32_t> conflicts; // one or two fanin nodes
+              for (auto i = 0u; i < d_aig.size(); i++)
+              {
+                if (merge.test(i))
+                {
+                  conflicts.push_back(i);
+                }
+                else 
+                {
+                  visited.set(i);
+                }
+              }
+
+              leaves.push_back({v.n, conflicts});
+            }
+          }
+        
+          it = steps().insert(it, {lvl[0].n, compute_action_with_copy{leaves}});
+          it += 1;
+          it = steps().insert(it, {lvl[0].n, uncompute_action_with_copy{leaves}});
+        }        
       }
-
       return 1;
-
     }
     else
     {
