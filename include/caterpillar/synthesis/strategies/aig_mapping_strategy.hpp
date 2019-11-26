@@ -56,7 +56,7 @@ class aig_mapping_strategy : public mapping_strategy<mockturtle::aig_network>
     node_and_children(){}
 
     node_t n;
-    std::bitset<20> mask;
+    std::bitset<32> mask;
 
   };
   
@@ -192,7 +192,7 @@ public:
         }
         else
         {
-          auto visited = std::bitset<20>();
+          auto visited = std::bitset<32>();
         
           std::vector< std::pair< uint32_t, std::vector<uint32_t> > > leaves;
           for( auto v : lvl)
