@@ -30,12 +30,13 @@ public:
   using Steps = std::vector<std::pair<mockturtle::node<Network>, mapping_strategy_action>>;
   using result = percy::synth_result;
 
-  bsat_pebble_solver( Network const& net, uint32_t pebbles )
+  bsat_pebble_solver( Network const& net, uint32_t pebbles, uint32_t conflict_limit = 0 )
       : index_to_gate( net.num_gates() ),
         gate_to_index( net ),
         _net( net ),
         _pebbles( pebbles ),
-        _nr_gates( net.num_gates() )
+        _nr_gates( net.num_gates()),
+        conflict_limit(conflict_limit)
   {
     net.foreach_gate( [&]( auto a, auto i ) {
       gate_to_index[a] = i;
@@ -176,7 +177,7 @@ public:
     }
   }
 
-  result solve( uint32_t conflict_limit=0 )
+  result solve( )
   {
     std::vector<int> p( _nr_gates );
     _net.foreach_gate( [&]( auto n, auto i ) {
@@ -353,6 +354,7 @@ private:
   uint32_t _nr_gates;
   uint32_t _nr_steps = 0;
   uint32_t extra;
+  uint32_t conflict_limit;
 };
 
 } // namespace caterpillar

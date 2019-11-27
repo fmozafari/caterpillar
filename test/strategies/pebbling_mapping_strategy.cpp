@@ -12,6 +12,7 @@
 #include <kitty/static_truth_table.hpp>
 #include <mockturtle/algorithms/simulation.hpp>
 #include <mockturtle/networks/aig.hpp>
+#include <mockturtle/networks/xag.hpp>
 #include <tweedledum/io/write_unicode.hpp>
 #include <tweedledum/networks/netlist.hpp>
 
@@ -50,6 +51,7 @@ TEST_CASE( "Pebble mapping strategy for 3-bit sorting network bsat", "[pebbling_
   CHECK( simulate<kitty::static_truth_table<3>>( sorter ) == simulate<kitty::static_truth_table<3>>( *sorter2 ) );
 }
 
+//#ifdef USE_Z3
 TEST_CASE( "Pebble mapping strategy for 3-bit sorting network z3", "[pebbling_mapping_strategy2]" )
 {
   using namespace caterpillar;
@@ -87,4 +89,50 @@ TEST_CASE( "Pebble mapping strategy for 3-bit sorting network z3", "[pebbling_ma
   const auto sorter2 = circuit_to_logic_network<aig_network>(circ, st.i_indexes, st.o_indexes);
   CHECK( sorter2 );
   CHECK( simulate<kitty::static_truth_table<3>>( sorter ) == simulate<kitty::static_truth_table<3>>( *sorter2 ) );
+}
+//#endif
+
+TEST_CASE("pebble xag using weighted nodes", "[peb. xag with weights]")
+{
+  using namespace mockturtle;
+  using namespace caterpillar;
+  using namespace tweedledum;
+  using peb_xag_t = pebbling_view<xag_network>;
+
+  xag_network xag;
+
+  auto p1 = xag.create_pi();
+  auto p2 = xag.create_pi();
+  auto p3 = xag.create_pi();
+  auto p4 = xag.create_pi();
+
+  auto n1 = xag.create_and(p1, p2);
+  auto n2 = xag.create_xor(p2, p3);
+  auto n3 = xag.create_xor(p3, p4);
+  auto n4 = xag.create_and(n1, n2);
+  auto n5 = xag.create_xor(n3, n4);
+
+  xag.create_po(n5);
+
+  peb_xag_t peb_xag = pebbling_view{xag};
+  peb_xag.set_weight(xag.get_node(n1), 4);
+
+  pebbling_mapping_strategy_params ps;
+  ps.pebble_limit = 4;
+  ps.max_weight = 17;
+  weighted_pebbling_mapping_strategy<peb_xag_t> strategy (ps);
+
+  netlist<stg_gate> rnet;
+
+  logic_network_synthesis_stats st;
+  logic_network_synthesis_params param;
+  param.verbose = false;
+
+
+  logic_network_synthesis(rnet, peb_xag, strategy, {}, param, &st);
+
+  const auto circ = circuit_to_logic_network<xag_network>(rnet, st.i_indexes, st.o_indexes);
+  CHECK( circ );
+  CHECK( simulate<kitty::static_truth_table<4>>( xag ) == simulate<kitty::static_truth_table<4>>( *circ ) );
+
 }

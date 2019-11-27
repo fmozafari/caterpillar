@@ -14,6 +14,8 @@
 
 #include <mockturtle/utils/progress_bar.hpp>
 
+#include <caterpillar/solvers/z3_solver.hpp>
+
 namespace caterpillar
 {
 
@@ -29,6 +31,9 @@ struct pebbling_mapping_strategy_params
 
   /*! \brief Maximum number of steps */
   uint32_t max_steps{100000};
+
+  /*! \brief max_weight */
+  uint32_t max_weight{0u};
 
   /*! \brief Conflict limit for the SAT solver (0 means no limit). */
   uint32_t conflict_limit{0u};
@@ -70,10 +75,93 @@ public:
     std::vector<std::pair<mockturtle::node<LogicNetwork>, mapping_strategy_action>> store_steps;
 
     auto limit = ps.pebble_limit;
-    unsigned max_steps = ps.max_steps;
+    assert ( ps.max_weight == 0 && "[error] conditions on the maximum weight are not supported, use weighted_pebbling_mapping_strategy instead ! ");
+
     while ( true )
     {
-      Solver solver( ntk, limit );
+      Solver solver( ntk, limit, ps.conflict_limit );
+
+      solver.init();
+
+      mockturtle::progress_bar bar( 100, "|{0}| current step = {1}", ps.progress );
+
+      typename Solver::result result;
+
+      do
+      {
+        if ( solver.current_step() >= ps.max_steps )
+        {
+          result = solver.unknown();
+          break;
+        }
+
+        bar( std::min<uint32_t>( solver.current_step(), 100 ), solver.current_step() );
+
+        solver.add_step();
+        result = solver.solve(); 
+      } while ( result == solver.unsat() );
+
+      if ( result == solver.unknown() )
+      {
+        if ( ps.increment_on_failure )
+        {
+          limit++;
+          continue;
+        }
+        else if ( !ps.decrement_on_success )
+          return false;
+      }
+      else if ( result == solver.sat() )
+      {
+        this->steps() = solver.extract_result();
+        if ( ps.decrement_on_success )
+        {
+          limit--;
+          continue;
+        }
+      }
+
+      if ( this->steps().empty() )
+        return false;
+
+      return true;
+    }
+  }
+
+private:
+  pebbling_mapping_strategy_params ps;
+};
+
+template<class LogicNetwork>
+class weighted_pebbling_mapping_strategy : public mapping_strategy<LogicNetwork>
+{
+public:
+  weighted_pebbling_mapping_strategy( pebbling_mapping_strategy_params const& ps = {} )
+    : ps( ps )
+  {
+    static_assert( has_get_weight_v<LogicNetwork>, "LogicNetwork does not implement the get_weight method");
+    static_assert( mt::is_network_type_v<LogicNetwork>, "LogicNetwork is not a network type" );
+    static_assert( mt::has_is_pi_v<LogicNetwork>, "LogicNetwork does not implement the is_pi method" );
+    static_assert( mt::has_foreach_fanin_v<LogicNetwork>, "LogicNetwork does not implement the foreach_fanin method" );
+    static_assert( mt::has_foreach_gate_v<LogicNetwork>, "LogicNetwork does not implement the foreach_gate method" );
+    static_assert( mt::has_num_gates_v<LogicNetwork>, "LogicNetwork does not implement the num_gates method" );
+    static_assert( mt::has_foreach_po_v<LogicNetwork>, "LogicNetwork does not implement the foreach_po method" );
+    static_assert( mt::has_index_to_node_v<LogicNetwork>, "LogicNetwork does not implement the index_to_node method" );
+  }
+
+  bool compute_steps( LogicNetwork const& ntk ) override
+  {
+    using Solver = z3_pebble_solver<LogicNetwork>;
+
+    assert( !ps.decrement_on_success || !ps.increment_on_failure );
+
+    std::vector<std::pair<mockturtle::node<LogicNetwork>, mapping_strategy_action>> store_steps;
+
+    auto limit = ps.pebble_limit;
+    while ( true )
+    {
+      Solver solver( ntk, limit, ps.conflict_limit,  ps.max_weight );
+
       solver.init();
 
       mockturtle::progress_bar bar( 100, "|{0}| current step = {1}", ps.progress );

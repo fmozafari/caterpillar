@@ -24,6 +24,22 @@ namespace caterpillar
 
 */
 
+
+#pragma region has_get_weight
+template<class Ntk, class = void>
+struct has_get_weight : std::false_type
+{
+};
+
+template<class Ntk>
+struct has_get_weight<Ntk, std::void_t<decltype( std::declval<Ntk>().get_weight( std::declval<mockturtle::node<Ntk>>() ) )>> : std::true_type
+{
+};
+
+template<class Ntk>
+inline constexpr bool has_get_weight_v = has_get_weight<Ntk>::value;
+#pragma endregion
+
 template<typename Ntk>
 class pebbling_view : public mockturtle::immutable_view<Ntk>
 {

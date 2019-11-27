@@ -42,7 +42,7 @@ public:
 	using node = node<Ntk>;
   using result = z3::check_result;
 
-	z3_pebble_solver(const pebbling_view<Ntk>& net, const int& pebbles, const int& max_conflicts = 0, const int& max_weight = 0)
+	z3_pebble_solver(const Ntk& net, const int& pebbles, const int& max_conflicts = 0, const int& max_weight = 0)
 	:_net(net), _pebbles(pebbles), _max_weight(max_weight), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
 	{
 		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
@@ -51,6 +51,7 @@ public:
 		static_assert( has_foreach_fanin_v<Ntk>, "Ntk does not implement the foreach_fanin method" );
 
 		ctx.set( "max_conflicts", max_conflicts );
+
 	}
 
 	uint32_t node_to_var( node n )
@@ -162,8 +163,11 @@ public:
 		}
 
 		/* add weight clause */
-		if(_max_weight != 0) slv.add(atmost(weight_expr(), _max_weight+1));
-	
+		if constexpr ( has_get_weight_v<Ntk> )
+		{
+			if(_max_weight != 0) slv.add(atmost(weight_expr(), _max_weight));
+		}
+
 		/* check result (drop final clauses if unsat)*/
 		auto result = slv.check();
 		if (result == unsat())
@@ -264,7 +268,7 @@ public:
 
 
 private:
-const pebbling_view<Ntk> _net;
+const Ntk _net;
 const int _pebbles;
 const int _max_weight;
 
