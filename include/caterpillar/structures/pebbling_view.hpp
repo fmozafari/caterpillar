@@ -51,8 +51,13 @@ public:
     static_assert( mockturtle::is_network_type_v<Ntk>, "Ntk is not a network type" );
     static_assert( mockturtle::has_num_gates_v<Ntk>, "Ntk does not implement the num_gates method" );
     static_assert( mockturtle::has_num_pis_v<Ntk>, "Ntk does not implement the num_pis method" );
+    static_assert( mockturtle::has_foreach_node_v<Ntk>, "Ntk does not implement the foreach_node method" );
+    static_assert( mockturtle::has_foreach_fanin_v<Ntk>, "Ntk does not implement the foreach_fanin method" );
+
 
     _weights.resize(this ->num_gates(), 1);
+
+    compute_parents();
 
   }
 
@@ -66,8 +71,26 @@ public:
     _weights[this->node_to_index( n - this->num_pis() - 1 )] = w;
   }
 
+  std::vector<node> get_parents( node const& n) const
+  {
+    return parents[n];
+  }
+
 private:
+
+  void compute_parents()
+  {
+    parents.resize(this -> size());
+
+    this -> foreach_node([&] (auto const& node) {
+      this -> foreach_fanin( node, [&] (auto const& s) {
+        auto ch = this -> get_node(s);
+        parents[ch].push_back(node);
+      });
+    });
+  }
   std::vector<uint32_t> _weights;
+  std::vector<std::vector<node>> parents;
 };
 
  } // namespace caterpillar
