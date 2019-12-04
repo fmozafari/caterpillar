@@ -316,7 +316,7 @@ public:
           {
             if ( inplace )
             {
-              it = steps.insert( it, {index_to_gate[n], uncompute_inplace_action{target}} );
+              it = steps.insert( it, {index_to_gate[n], uncompute_inplace_action{target, {}}} );
               ++it;
             }
             else
@@ -329,7 +329,7 @@ public:
           {
             if ( inplace )
             {
-              it = steps.insert( it, {index_to_gate[n], compute_inplace_action{target}} );
+              it = steps.insert( it, {index_to_gate[n], compute_inplace_action{target, {}}} );
             }
             else
             {

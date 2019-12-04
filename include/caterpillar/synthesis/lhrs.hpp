@@ -187,6 +187,7 @@ public:
                       std::cout << l << " ";
                     }
                   }
+                  std::cout << "\n";
                 }
                 const auto t = node_to_qubit[node];
                 if (action.leaves)

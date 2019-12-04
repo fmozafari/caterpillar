@@ -5,7 +5,7 @@
 *-----------------------------------------------------------------------------*/
 #pragma once
 
-//#ifdef USE_Z3 
+#ifdef USE_Z3 
 
 #include <caterpillar/structures/pebbling_view.hpp>
 #include <caterpillar/structures/abstract_network.hpp>
@@ -238,6 +238,7 @@ public:
 			std::sort(step_action.begin(), step_action.end(), 
 				[](const std::pair<uint32_t, bool>& first, const std::pair<uint32_t, bool>& second)
 				{
+					(void)second;
 					if(!first.second)	return true;
 					else return false;
 				}
@@ -321,4 +322,4 @@ inline void z3_pebble_solver<klut_network>::add_step()
 }
 
 }
-//#endif
+#endif

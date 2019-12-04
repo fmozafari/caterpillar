@@ -7,7 +7,7 @@
 
 namespace caterpillar::detail
 {
-  int t_cost( const int tof_controls, const int lines )
+  inline int t_cost( const int tof_controls, const int lines )
   {
     switch ( tof_controls )
     {

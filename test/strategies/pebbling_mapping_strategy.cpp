@@ -2,13 +2,8 @@
 
 #include <cstdint>
 
-#include <caterpillar/structures/stg_gate.hpp>
-#include <caterpillar/structures/pebbling_view.hpp>
-#include <caterpillar/synthesis/lhrs.hpp>
-#include <caterpillar/synthesis/strategies/pebbling_mapping_strategy.hpp>
-#include <caterpillar/solvers/bsat_solver.hpp>
-#include <caterpillar/solvers/z3_solver.hpp>
-#include <caterpillar/verification/circuit_to_logic_network.hpp>
+#include <caterpillar/caterpillar.hpp>
+
 #include <kitty/static_truth_table.hpp>
 #include <mockturtle/algorithms/simulation.hpp>
 #include <mockturtle/networks/aig.hpp>
@@ -130,6 +125,45 @@ TEST_CASE("pebble xag using weighted nodes", "[peb. xag with weights]")
 
 
   logic_network_synthesis(rnet, peb_xag, strategy, {}, param, &st);
+
+  const auto circ = circuit_to_logic_network<xag_network>(rnet, st.i_indexes, st.o_indexes);
+  CHECK( circ );
+  CHECK( simulate<kitty::static_truth_table<4>>( xag ) == simulate<kitty::static_truth_table<4>>( *circ ) );
+}
+
+TEST_CASE("pebble XAG inplace", "[pxagin]")
+{
+  using namespace mockturtle;
+  using namespace caterpillar;
+  using namespace tweedledum;
+  using network_t = pebbling_view<xag_network>;
+  xag_network xag;
+
+  auto n1 = xag.create_pi();
+  auto n2 = xag.create_pi();
+  auto n3 = xag.create_pi();
+  auto n4 = xag.create_pi();
+
+  auto n5 = xag.create_and(n1, n2);
+  auto n6 = xag.create_xor(n5, n3);
+  auto n7 = xag.create_xor(n3, n4);
+  auto n8 = xag.create_and(n6, n7);
+
+  xag.create_po(n8);
+
+  network_t pxag {xag};
+
+  pebbling_mapping_strategy_params ps;
+  ps.pebble_limit = 4;
+  pebbling_mapping_strategy<network_t, z3_pebble_inplace_solver<network_t>> inplace_strategy (ps);
+
+  netlist<stg_gate> rnet;
+
+  logic_network_synthesis_stats st;
+  logic_network_synthesis_params param;
+  param.verbose = false;
+
+  logic_network_synthesis(rnet, pxag, inplace_strategy, {}, param, &st);
 
   const auto circ = circuit_to_logic_network<xag_network>(rnet, st.i_indexes, st.o_indexes);
   CHECK( circ );

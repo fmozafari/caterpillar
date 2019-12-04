@@ -24,6 +24,20 @@ namespace caterpillar
 
 */
 
+#pragma region has_get_parents
+template<class Ntk, class = void>
+struct has_get_parents : std::false_type
+{
+};
+
+template<class Ntk>
+struct has_get_parents<Ntk, std::void_t<decltype( std::declval<Ntk>().get_parents( std::declval<mockturtle::node<Ntk>>() ) )>> : std::true_type
+{
+};
+
+template<class Ntk>
+inline constexpr bool has_get_parents_v = has_get_parents<Ntk>::value;
+#pragma endregion
 
 #pragma region has_get_weight
 template<class Ntk, class = void>

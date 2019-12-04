@@ -37,7 +37,7 @@
 #include "caterpillar/optimization/post_opt_esop.hpp"
 #include "caterpillar/solvers/bsat_solver.hpp"
 #include "caterpillar/solvers/z3_solver.hpp"
-#include "caterpillar/solvers/z3_solver_inplace.hpp"
+#include "caterpillar/solvers/z3_inplace_solver.hpp"
 #include "caterpillar/structures/stg_gate.hpp"
 #include "caterpillar/structures/abstract_network.hpp"
 #include "caterpillar/structures/pebbling_view.hpp"
