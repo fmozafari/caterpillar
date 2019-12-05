@@ -26,7 +26,10 @@ using namespace mockturtle;
 template<typename Ntk>
 class z3_pebble_inplace_solver
 {
-  
+  /* A variables object contains three vectors of boolean variables: s[i], is one if node i is pebbled;
+	 * a[i] is one if i is computed/uncomputed
+	 * i[i] is one if i is used (inplace) to store a value
+	 */
   struct variables
   {
     variables( context& ctx )
@@ -57,22 +60,13 @@ public:
 		ctx.set( "max_conflicts", max_conflicts );
 	}
 
-	uint32_t node_to_var( node n )
-	{
-		return n ;
-	}
-
-	node var_to_node(uint32_t var)
-	{
-		return var;
-	}
 
 	expr_vector new_variable_set(std::string s)
 	{
 		expr_vector x (ctx);
 
 		_net.foreach_node([&](auto node){
-			auto x_name = fmt::format("{}_{}_{}", s, num_steps, node_to_var(node));
+			auto x_name = fmt::format("{}_{}_{}", s, num_steps, node);
 			x.push_back( ctx.bool_const( x_name.c_str() ) );
 			
 		});
@@ -80,7 +74,6 @@ public:
 		return x;
 	}
 
-	/* for inplace I need input pebbles */
 	void init()
 	{
 		expr_vector invar (ctx);
@@ -91,21 +84,17 @@ public:
 		curr.i = new_variable_set("i");
 
 		for( auto i = 0u; i < _net.num_pis()+1; i++)
-		{
 			invar.push_back(curr.s[i]);
-		}
+		
 		for( auto i = _net.num_pis()+1; i < curr.s.size() ; i++)
-		{
 			nodevar.push_back(curr.s[i]);
-		}
-
+		
+		/* clauses defining all inputs pebbled at step 0 and every other node unpebbled */
 		slv.add(!mk_or(nodevar));
 		slv.add(mk_and(invar));
 		slv.add(!mk_or(curr.a));
 		slv.add(!mk_or(curr.i));
 
-		//std::cout << "Init: \n";
-		//std::cout << "invar: " << invar << " nodevars: " <<  nodevar << " actionsvar: " << curr.a << "\n";
 	}
 
 	uint32_t current_step()
@@ -135,7 +124,7 @@ public:
 				slv.add( implies( curr.s[var] != next.s[var], next.i[var]) );
 			}
 
-			/* inplace encoding, should support also out of place!! */
+			/* nodes for which an inplace pebbling move exists */
 			if (_net.is_xor(var))
 			{
 				std::vector<uint32_t> chs;
@@ -144,6 +133,7 @@ public:
 				});
 
 				assert (chs.size() == 2);
+
 				auto comp = next.a[var] && next.s[var];
 				auto uncomp = next.a[var] && !next.s[var];
 				auto next_input_different =  next.s[chs[0]] != next.s[chs[1]] ;
@@ -153,30 +143,40 @@ public:
 																			next.s[chs[1]] &&
 																			curr.s[chs[1]];
 
-				 
+				/* the node is computed implies 
+				 * that one of the inputs will be uncomputed in the next step 
+				 * OR
+				 * that inputs are constant throgh the next step */
 				slv.add ( implies (comp, 
 													( 
 														(curr.s[chs[0]] && curr.s[chs[1]] && next_input_different) ||
 														input_pebbled_in_step
 													) ));
+				/* the node is uncompuded implies that 
+				 * one of the inputs will be re-computed in the next step
+				 * OR
+				 * that inputs are constant throgh the next step */
 				slv.add ( implies (uncomp, 
 													(	
 														(curr_input_different && next.s[chs[0]] && next.s[chs[1]]) ||
 														input_pebbled_in_step
 													) ));
 
+				/* if a node is active, its children cannot be */
 				slv.add ( implies ( next.a[var], !next.a[chs[0]] && !next.a[chs[1]] ) );
 
+				/* if a node child is active inplace, the node is active and the child changes in the next step */
 				slv.add ( implies ( next.i[chs[0]], next.a[var] && (curr.s[chs[0]] != next.s[chs[0]]) ) );
 				slv.add ( implies ( next.i[chs[1]], next.a[var] && (curr.s[chs[1]] != next.s[chs[1]]) ) );
 
+				/* a node changes in the next step if it is active or active inplace, it cannot be both */
 				slv.add( implies ( curr.s[var] == next.s[var], !next.a[var] && !next.i[var] ) );
 				slv.add( implies ( curr.s[var] != next.s[var], next.a[var] || next.i[var] ) );
 			}
-			/* out of place encoding */
+			/* out of place encoding for all other nodes type */
 			else if (var > _net.num_pis())
 			{
-				_net.foreach_fanin( var_to_node( var ), [&]( auto sig ) {
+				_net.foreach_fanin(  var , [&]( auto sig ) {
 
 					auto ch = _net.get_node( sig );
 					slv.add( implies (next.a[var], ( curr.s[ch] && next.s[ch] && !next.a[ch] ) ) );
@@ -186,8 +186,7 @@ public:
 				slv.add( implies ( curr.s[var] == next.s[var] , !next.a[var] ) );
 			}
 			
-			//block condition on inputs whose parents don't change
-			/*block condition on nodes with multiple fanouts. */
+			/* a node can be activated inplace only if it has exactly one actibve (inplace) parent */
 			if( !_net.get_parents(var).empty() )
 			{
 				expr_vector parents_vars(ctx);
@@ -197,28 +196,22 @@ public:
 						parents_vars.push_back(next.a[parent]);
 				}
 				if( !parents_vars.empty())
-				{
 					slv.add( implies( next.i[var], atleast(parents_vars, 1) && atmost(parents_vars, 1)) );
-				}
+				
 				else
-				{
 					slv.add( !next.i[var] );
-				}
 			}
 			else 
-			{
 				slv.add( !next.i[var] );
-			}
-				
 		}
 
-		if(_pebbles != 0)	slv.add(atmost(next.s, _pebbles));
+		if(_pebbles != 0)	
+			slv.add(atmost(next.s, _pebbles));
 		curr = next;
 	}
 
-	/* I can only consider a for the weights, as for every i there is also an a and it 
-	 * only corresponds to one operation, namely a CNOT 
-	 * */
+	/* Only consider a for the weights, as for every i there is also an a and it 
+	 * only corresponds to one operation */
 	expr_vector weight_expr()
 	{
 		expr_vector clause (ctx);
@@ -226,7 +219,7 @@ public:
 		{
 			for (uint32_t i=0; i<curr.s.size(); i++)
 			{
-				for (uint32_t r=0; r<_net.get_weight(var_to_node(i)); r++)
+				for (uint32_t r=0; r<_net.get_weight(i); r++)
 				{
 					clause.push_back(ctx.bool_const(fmt::format("a_{}_{}", k, i).c_str()));
 				}
@@ -248,7 +241,7 @@ public:
 		/* add final clauses */
 		for (auto var=0u ; var<next.s.size(); var++)
 		{
-			if(std::find(o_nodes.begin(), o_nodes.end(), var_to_node(var)) != o_nodes.end())
+			if(std::find(o_nodes.begin(), o_nodes.end(), var) != o_nodes.end())
 			{
 				slv.add(curr.s[var]);
 			}
@@ -302,8 +295,8 @@ public:
 				{
 					if (a_var.is_true()) 
 					{
-						w += _net.get_weight(var_to_node(n));
-						std::cout << "y" << "+" << _net.get_weight(var_to_node(n)) << " " ;
+						w += _net.get_weight(n);
+						std::cout << "y" << "+" << _net.get_weight(n) << " " ;
 					}
 					else std::cout << "n" << "+0 ";
 				}
@@ -379,7 +372,7 @@ public:
 			/* add actions to the pebbling strategy */
 			for(auto act : step_action)
 			{
-				auto act_node = var_to_node(act.first);
+				auto act_node = act.first;
 				uint64_t act_ch_node;
 				bool inplace = false;
 
