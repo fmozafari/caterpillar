@@ -7,7 +7,7 @@
 
 namespace caterpillar
 {
-void write_qsharp( tweedledum::netlist<stg_gate> const& rnet, std::ostream& os, std::string const& funcname, bool low_depth = false)
+void write_qsharp( tweedledum::netlist<stg_gate> const& rnet, std::ostream& os, std::string const& funcname, bool meas_based_uncomp = false)
 {
   auto qubits = rnet.num_qubits();
 
@@ -23,6 +23,12 @@ void write_qsharp( tweedledum::netlist<stg_gate> const& rnet, std::ostream& os, 
   {
     auto cs = rgate.gate.controls();
     auto ts = rgate.gate.targets();
+    
+    for( auto c : cs)
+    {
+      if(c.is_complemented())
+        os << fmt::format("    X(qs[{}]);\n", c);;
+    }
 
     if(rgate.gate.num_controls() == 0)
     {
@@ -30,7 +36,7 @@ void write_qsharp( tweedledum::netlist<stg_gate> const& rnet, std::ostream& os, 
       os << fmt::format("    X(qs[{}]);\n", ts[0]);
 
     }
-    if (rgate.gate.num_controls() == 1)
+    else if (rgate.gate.num_controls() == 1)
     {
       //CNOT
       os << fmt::format("    CNOT(qs[{}], qs[{}] );\n", cs[0], ts[0]);
@@ -43,13 +49,17 @@ void write_qsharp( tweedledum::netlist<stg_gate> const& rnet, std::ostream& os, 
       if (std::find(ash.begin(), ash.end(), sign ) == ash.end())
       {
         
-        low_depth ? os << fmt::format("    ANDLowDepth(qs[{}], qs[{}], qs[{}]);\n", cs[0], cs[1], ts[0]) : os << fmt::format("    CCNOT(qs[{}], qs[{}], qs[{}]);\n", cs[0], cs[1], ts[0]);
+        meas_based_uncomp ? 
+          os << fmt::format("    AND(qs[{}], qs[{}], qs[{}]);\n", cs[0], cs[1], ts[0]) : 
+          os << fmt::format("    CCNOT(qs[{}], qs[{}], qs[{}]);\n", cs[0], cs[1], ts[0]);
 
         ash.push_back(sign);
       }
       else
       {
-        low_depth ? os << fmt::format("    Adjoint ANDLowDepth(qs[{}], qs[{}], qs[{}]);\n", cs[0], cs[1], ts[0]) : os << fmt::format("    CCNOT(qs[{}], qs[{}], qs[{}]);\n", cs[0], cs[1], ts[0]);
+        meas_based_uncomp ? 
+          os << fmt::format("    Adjoint AND(qs[{}], qs[{}], qs[{}]);\n", cs[0], cs[1], ts[0]) : 
+          os << fmt::format("    CCNOT(qs[{}], qs[{}], qs[{}]);\n", cs[0], cs[1], ts[0]);
       }
 
     }
@@ -58,6 +68,11 @@ void write_qsharp( tweedledum::netlist<stg_gate> const& rnet, std::ostream& os, 
       //multiple-controlled X
       os << fmt::format("    Controlled XWrap ([ qs[{}] ], qs[{}]);\n", fmt::join(cs, "], qs["), ts[0]);
 
+    }
+    for( auto c : cs)
+    {
+      if(c.is_complemented())
+        os << fmt::format("    X(qs[{}]);\n", c);;
     }
     
 
@@ -69,10 +84,10 @@ void write_qsharp( tweedledum::netlist<stg_gate> const& rnet, std::ostream& os, 
 
 
 
-void write_qsharp( tweedledum::netlist<stg_gate> const& rnet, std::string const& filename, std::string const& funcname = "" )
+void write_qsharp( tweedledum::netlist<stg_gate> const& rnet, std::string const& filename, std::string const& funcname = "", bool meas_based = false )
 {
-  std::ofstream os( filename.c_str(), std::ofstream::out );
-  write_qsharp( rnet, os, funcname );
+  std::ofstream os( filename.c_str(), std::ofstream::app );
+  write_qsharp( rnet, os, funcname, meas_based );
   os.close();
 }
 
