@@ -109,12 +109,15 @@ TEST_CASE("pebble xag using weighted nodes", "[peb. xag with weights]")
 
   xag.create_po(n5);
 
+  /* create a pebbling view to assign weights to nodes */
   peb_xag_t peb_xag = pebbling_view{xag};
   peb_xag.set_weight(xag.get_node(n1), 4);
 
+  /* set up pebbles and weight limits */
   pebbling_mapping_strategy_params ps;
   ps.pebble_limit = 4;
   ps.max_weight = 17;
+
   weighted_pebbling_mapping_strategy<peb_xag_t> strategy (ps);
 
   netlist<stg_gate> rnet;
@@ -122,7 +125,6 @@ TEST_CASE("pebble xag using weighted nodes", "[peb. xag with weights]")
   logic_network_synthesis_stats st;
   logic_network_synthesis_params param;
   param.verbose = false;
-
 
   logic_network_synthesis(rnet, peb_xag, strategy, {}, param, &st);
 
@@ -162,7 +164,7 @@ TEST_CASE("pebble XAG inplace", "[pxagin]")
   logic_network_synthesis_stats st;
   logic_network_synthesis_params param;
   param.verbose = false;
-
+ 
   logic_network_synthesis(rnet, pxag, inplace_strategy, {}, param, &st);
 
   const auto circ = circuit_to_logic_network<xag_network>(rnet, st.i_indexes, st.o_indexes);
