@@ -72,8 +72,6 @@ public:
   {
     assert( !ps.decrement_on_success || !ps.increment_on_failure );
 
-    std::vector<std::pair<mockturtle::node<LogicNetwork>, mapping_strategy_action>> store_steps;
-
     auto limit = ps.pebble_limit;
     assert ( ps.max_weight == 0 && "[error] conditions on the maximum weight are not supported, use weighted_pebbling_mapping_strategy instead ! ");
 
@@ -154,8 +152,6 @@ public:
     using Solver = z3_pebble_solver<LogicNetwork>;
 
     assert( !ps.decrement_on_success || !ps.increment_on_failure );
-
-    std::vector<std::pair<mockturtle::node<LogicNetwork>, mapping_strategy_action>> store_steps;
 
     auto limit = ps.pebble_limit;
     while ( true )

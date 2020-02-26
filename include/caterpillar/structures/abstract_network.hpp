@@ -153,7 +153,7 @@ public:
 
 #pragma region Create arbitrary functions
   /*! creates an abstract node and returns its outcoming signal */
-  signal create_node( std::vector<signal> const& children, uint32_t weight )
+  signal create_node( std::vector<signal> const& children, uint32_t weight = 1 )
   {
     storage::element_type::node_type node;
     std::copy( children.begin(), children.end(), std::back_inserter( node.children ) );
@@ -171,6 +171,7 @@ public:
 
     return index;
   }
+
 
 #pragma endregion  
 

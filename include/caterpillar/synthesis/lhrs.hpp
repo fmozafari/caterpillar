@@ -304,6 +304,7 @@ private:
 
   void compute_big_xor( uint32_t t, std::vector<uint32_t> leaves)
   {
+    assert( leaves.size() > 1);
     for ( auto control : leaves )
     {
       if(node_to_qubit[control] != t)
