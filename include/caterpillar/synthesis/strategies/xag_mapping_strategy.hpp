@@ -21,13 +21,18 @@
 namespace caterpillar
 {
 
+using node_t = mockturtle::xag_network::node;
+using steps_xag_t = std::vector<std::pair<node_t, mapping_strategy_action>>;
+using steps_abs_t = std::vector<std::pair<abstract_network::node, mapping_strategy_action>>;
+using SolverType = z3_pebble_solver<abstract_network>;
+
 struct action_sets
 {
-  mockturtle::node<mockturtle::xag_network> node;
+  node_t node;
   std::vector<uint32_t> target;
   std::vector<uint32_t> leaves;
 
-  action_sets( mockturtle::node<mockturtle::xag_network> node, std::vector<uint32_t> leaves, std::vector<uint32_t> target = {} )
+  action_sets( node_t node, std::vector<uint32_t> leaves, std::vector<uint32_t> target = {} )
       : node(node), target(target), leaves(leaves) {};
 };
 
@@ -38,7 +43,7 @@ inline std::vector<uint32_t> sym_diff(std::vector<uint32_t> first, std::vector<u
   return diff;
 }
 
-inline bool first_cone_included_in_second(std::vector<uint32_t> first, std::vector<uint32_t> second)
+inline bool is_included(std::vector<uint32_t> first, std::vector<uint32_t> second)
 {
   /* if second is included in first */
   bool is_included = true;
@@ -54,92 +59,91 @@ inline bool first_cone_included_in_second(std::vector<uint32_t> first, std::vect
 }
 
 
-inline std::vector<std::vector<uint32_t>> compute_fi( mockturtle::node<mockturtle::xag_network> node, mockturtle::xag_network const& xag)
+inline void update_fi( node_t node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>>& fi)
+{
+  if ( xag.is_and( node ) || xag.is_pi(node))
   {
-    std::vector<std::vector<uint32_t>> fi (xag.size());
-
-    if ( xag.is_and( node ) || xag.is_pi(node))
-    {
-      fi[ xag.node_to_index(node) ] = { xag.node_to_index(node) };
-    }
-
-    else
-    {      
-      std::vector<uint32_t> fanin;
-      xag.foreach_fanin(node, [&]( auto si ) {
-        fanin.push_back(xag.node_to_index(xag.get_node(si)));
-      } );
-
-      
-      fi[xag.node_to_index( node )] = sym_diff( fi[fanin[0]], fi[fanin[1]] );
-    }
-    return fi;
+    fi[ xag.node_to_index(node) ] = { xag.node_to_index(node) };
   }
 
-inline  std::vector<action_sets> get_fi_target( mockturtle::node<mockturtle::xag_network> node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>>& fi )
-  {
-    std::vector<action_sets> chs; 
-    std::vector<mockturtle::node<mockturtle::xag_network>> fanins;
-    bool mono = false;
-
-    xag.foreach_fanin( node, [&]( auto si ) {
-      auto fanin = xag.get_node( si );
-
-      auto set = action_sets(fanin, fi[xag.node_to_index( fanin )] ) ; 
-      chs.push_back( set ); 
-      if(xag.is_pi(fanin) || xag.is_and(fanin) ) mono = true;
-      
-      fanins.push_back(fanin);
+  else
+  {      
+    std::vector<uint32_t> fanin;
+    xag.foreach_fanin(node, [&]( auto si ) {
+      fanin.push_back(xag.node_to_index(xag.get_node(si)));
     } );
 
-    assert( chs.size() == 2 ); //contains max two elements
+    
+    fi[xag.node_to_index( node )] = sym_diff( fi[fanin[0]], fi[fanin[1]] );
+  }
+}
 
-    if ( !mono )
+inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>>& fi )
+{
+  std::vector<action_sets> cones; 
+
+  xag.foreach_fanin( node, [&]( auto si ) {
+    auto fanin = xag.get_node( si );
+
+    auto set = action_sets(fanin, fi[xag.node_to_index( fanin )] ) ; 
+    cones.push_back( set ); 
+  } );
+
+  assert( cones.size() == 2 );
+
+  // if one fanin is AND or PI symply delete f
+  if ( (cones[0].leaves.size() == 1) != (cones[1].leaves.size() == 1) )
+  {
+    if ( xag.is_xor( cones[1].node ) )
+      std::reverse(cones.begin(), cones.end());
+
+    cones[0].target = cones[0].leaves;
+
+    /* remove the single leaf if there is overlap */
+    auto it = std::find(cones[0].target.begin(), cones[0].target.end(), cones[1].leaves[0]);
+    if (it != cones[0].target.end())
+      cones[0].target.erase( it );
+  }
+  else 
+  {
+    if ( is_included(fi[xag.node_to_index(cones[1].node)], fi[xag.node_to_index(cones[0].node)]) )
+      std::reverse(cones.begin(), cones.end());
+
+    auto left = xag.node_to_index(cones[0].node);
+    auto right = xag.node_to_index(cones[1].node);
+
+    /* search a target for first */
+    /* empty if left is included */
+    std::set_difference(fi[left].begin(), fi[left].end(), 
+      fi[right].begin(), fi[right].end(), std::inserter(cones[0].target, cones[0].target.begin()));
+
+    /* set difference */
+    std::set_difference(fi[right].begin(), fi[right].end(), 
+      fi[left].begin(), fi[left].end(), std::inserter(cones[1].target, cones[1].target.begin()));
+    
+    /* the first may be included */
+    if( is_included(fi[left], fi[right] ) )
     {
-      if ( first_cone_included_in_second(fi[xag.node_to_index(chs[1].node)], fi[xag.node_to_index(chs[0].node)]) )
-        std::reverse(chs.begin(), chs.end());
+      /* add the top of the cone to the right */
+      cones[1].target.push_back( cones[0].node ); 
+      cones[1].leaves = cones[1].target;
 
-      /* search a target for first */
-      /* empty if first is included */
-      std::set_difference(fi[xag.node_to_index(chs[0].node)].begin(), fi[xag.node_to_index(chs[0].node)].end(), 
-        fi[xag.node_to_index( chs[1].node )].begin(), fi[xag.node_to_index( chs[1].node )].end(), std::inserter(chs[0].target, chs[0].target.begin()));
-
-      /* set difference */
-      std::set_difference(fi[xag.node_to_index(chs[1].node)].begin(), fi[xag.node_to_index(chs[1].node)].end(), 
-        fi[xag.node_to_index( chs[0].node )].begin(), fi[xag.node_to_index( chs[0].node )].end(), std::inserter(chs[1].target, chs[1].target.begin()));
-      
-      /* the first may be included */
-      if( first_cone_included_in_second(fi[xag.node_to_index(chs[0].node)], fi[xag.node_to_index(chs[1].node)] ) )
-      {
-        /* add the top of the cone to the second */
-        chs[1].target.push_back( chs[0].node );
-        chs[1].leaves = chs[1].target;
-
-        /* anything can be chosen as target */ 
-        chs[0].target = fi[xag.node_to_index( chs[0].node )];
-      }
-
+      /* anything can be chosen as target */ 
+      cones[0].target = fi[left];
     }
-    else
-    {
-      if ( xag.is_xor( fanins[1] ) )
-        std::reverse(fanins.begin(), fanins.end());
-
-      std::set_difference(fi[xag.node_to_index(fanins[0])].begin(), fi[xag.node_to_index(fanins[0])].end(), 
-        fi[xag.node_to_index(fanins[1])].begin(), fi[xag.node_to_index(fanins[1])].end(), std::inserter(chs[0].target, chs[0].target.begin()) );
-    }
-
-    return chs;
   }
 
-  
-    
-inline std::vector<std::pair<mockturtle::node<mockturtle::xag_network>, mapping_strategy_action>> gen_steps( mockturtle::node<mockturtle::xag_network> node, std::vector<action_sets>& chs, bool compute)
+  return cones;
+}
+
+inline steps_xag_t gen_steps( node_t node, std::vector<action_sets>& cones, bool compute)
 {
-  std::vector<std::pair<mockturtle::node<mockturtle::xag_network>, mapping_strategy_action>> comp_steps;
-  for(auto ch : chs)
+  steps_xag_t comp_steps;
+
+  for(auto ch : cones)
   {
-    if (ch.leaves.size() >= 1){
+
+    if (ch.leaves.size() > 1){
       if ( !ch.target.empty() )
       {
         comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
@@ -150,7 +154,6 @@ inline std::vector<std::pair<mockturtle::node<mockturtle::xag_network>, mapping_
       }
     }
   }
-  
 
   if(compute)
     comp_steps.push_back( {node, compute_action{}} );
@@ -160,11 +163,11 @@ inline std::vector<std::pair<mockturtle::node<mockturtle::xag_network>, mapping_
   }
 
 
-  std::reverse( chs.begin(), chs.end() );
+  std::reverse( cones.begin(), cones.end() );
 
-  for(auto ch : chs)
+  for(auto ch : cones)
   {
-    if (ch.leaves.size() >= 1){
+    if (ch.leaves.size() > 1){
       if ( !ch.target.empty() )
       {
         comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
@@ -193,15 +196,13 @@ inline std::vector<std::pair<mockturtle::node<mockturtle::xag_network>, mapping_
 class xag_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
 {
 
-  std::vector<std::vector<uint32_t>> fi;
-  mockturtle::xag_network xag;
-
 public:
   bool compute_steps( mockturtle::xag_network const& ntk ) override
   {
     mockturtle::topo_view xag {ntk};
+    std::vector<std::vector<uint32_t>> fi (xag.size());
 
-    std::vector<mockturtle::node<mockturtle::xag_network>> drivers;
+    std::vector<node_t> drivers;
     xag.foreach_po( [&]( auto const& f ) { drivers.push_back( xag.get_node( f ) ); } );
                                                                                    
 
@@ -210,32 +211,29 @@ public:
 
     xag.foreach_node( [&]( auto node ) {
       
-      auto fi = compute_fi( node, xag );
-
-
+      update_fi( node, xag, fi );
 
       if ( xag.is_and( node ) || std::find( drivers.begin(), drivers.end(), node ) != drivers.end() )
       {
-        auto chs = get_fi_target(  node, xag, fi );
+        auto cones = get_cones(  node, xag, fi );
 
         if ( xag.is_and( node ))
         {
-        
           /* compute step */
-          auto cc = gen_steps( node , chs,  true);
+          auto cc = gen_steps( node , cones,  true);
           it = steps().insert( it, cc.begin(), cc.end() );
           it = it + cc.size();
 
-          if ( std::find( drivers.begin(), drivers.end(), node ) == drivers.end() )
-          {
-            auto uc = gen_steps( node , chs, false);
+          if ( std::find( drivers.begin(), drivers.end(), node ) == drivers.end()  )
+          { 
+            auto uc = gen_steps( node , cones, false);
             it = steps().insert( it, uc.begin(), uc.end() );
           }
         }
         /* node is an XOR output */
         else 
         {
-          auto xc = gen_steps( node, chs, true);
+          auto xc = gen_steps( node, cones, true);
           it = steps().insert( it, xc.begin(), xc.end() );
 
         }
@@ -258,22 +256,19 @@ public:
 */
 class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
 {
-  using StepsXAG = std::vector<std::pair<mockturtle::xag_network::node, mapping_strategy_action>>;
-  using StepsABS = std::vector<std::pair<abstract_network::node, mapping_strategy_action>>;
 
-  using SolverType = z3_pebble_solver<abstract_network>;
  
-  StepsXAG get_box_steps(StepsABS const& store_steps)
+  steps_xag_t get_box_steps(steps_abs_t const& store_steps)
   {
-    StepsXAG xag_steps;
+    steps_xag_t xag_steps;
     for(auto step : store_steps)
     {
       auto box_node = step.first;
       auto action = step.second;
 
-      auto chs = box_to_action[box_node];
+      auto cones = box_to_action[box_node];
 
-      auto cc = gen_steps( chs[0].node, chs, std::holds_alternative<compute_action>( action ));
+      auto cc = gen_steps( cones[0].node, cones, std::holds_alternative<compute_action>( action ));
       xag_steps.insert(xag_steps.end(), cc.begin(), cc.end());
     }
 
@@ -283,7 +278,9 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
   abstract_network build_box_network(pebbling_view<mockturtle::xag_network> const& xag)
   {
 
-    std::unordered_map<mockturtle::xag_network::node, abstract_network::signal> xag_to_box;
+    std::unordered_map<node_t, abstract_network::signal> xag_to_box;
+    std::vector<std::vector<uint32_t>> fi (xag.size());
+
     auto box_ntk = abstract_network();
 
     xag.foreach_pi([&] (auto pi)
@@ -291,21 +288,21 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
       xag_to_box[pi] = box_ntk.create_pi(); 
     });
 
-    std::vector<mockturtle::node<mockturtle::xag_network>> drivers;
+    std::vector<node_t> drivers;
     xag.foreach_po( [&]( auto const& f ) { drivers.push_back( xag.get_node( f ) ); } );
 
     xag.foreach_node([&] (auto node)
     {
+      update_fi( node, xag, fi );
 
       if(xag.is_and(node))
       {
         /* collect all input signals of box */
         std::vector<abstract_network::signal> box_ins;
-        auto fi = compute_fi( node, xag );
 
-        auto chs = get_fi_target(  node, xag, fi );
+        auto cones = get_cones(  node, xag, fi );
 
-        for( auto fi_box : chs)
+        for( auto fi_box : cones)
         {
           for (auto l : fi_box.leaves)
           {
@@ -315,7 +312,7 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
 
         auto box_node_s = box_ntk.create_node(box_ins);
         xag_to_box[node] = box_node_s;
-        box_to_action[box_node_s] = chs;
+        box_to_action[box_node_s] = cones;
         
         if(std::find(drivers.begin(), drivers.end(), node) != drivers.end())
         {
@@ -344,7 +341,7 @@ public:
     /* build the abstract network */
     abstract_network box_ntk = build_box_network(xag);
 
-    StepsABS store_steps;
+    steps_abs_t store_steps;
 
     auto limit = ps.pebble_limit;
 
@@ -381,7 +378,7 @@ public:
         return false;
     }
 
-    this -> steps() = get_box_steps(store_steps);
+    steps() = get_box_steps(store_steps);
     return true;
   }
 };
