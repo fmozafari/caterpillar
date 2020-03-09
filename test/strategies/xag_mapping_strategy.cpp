@@ -357,3 +357,84 @@ TEST_CASE("synthesize simple xag 9", "[XAG synthesis-9]")
 
 
 }
+
+TEST_CASE("synthesize simple xag using pebbling", "[XAG pebbling synthesis]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+  auto xag = xag_network();
+
+  auto x1 = xag.create_pi();
+  auto x2 = xag.create_pi();
+  auto x3 = xag.create_pi();
+
+  auto n1 = xag.create_and(x1, x2);
+  auto n2 = xag.create_xor(x2, x3);
+  auto n3 = xag.create_xor(n1, n2);
+  auto n4 = xag.create_and(n2, n3);
+  
+  xag.create_po(n4);
+
+  netlist<stg_gate> qnet;
+
+  logic_network_synthesis_params ps;
+  logic_network_synthesis_stats st;
+  ps.verbose = false;
+
+  pebbling_mapping_strategy_params peb_ps;
+  peb_ps.pebble_limit=2;
+
+  xag_pebbling_mapping_strategy strategy(peb_ps);
+  logic_network_synthesis( qnet, xag, strategy, {}, ps, &st );
+
+  auto tt_xag = simulate<kitty::static_truth_table<3>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<3>>( *ntk );
+
+  CHECK(tt_xag == tt_ntk);
+
+}
+
+TEST_CASE("pebble simple xag 10", "[XAG synthesis-10]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+  auto xag = xag_network();
+
+  auto x0 = xag.create_pi();
+  auto x5 = xag.create_pi();
+  auto x6 = xag.create_pi();
+  auto x7 = xag.create_pi();
+
+  auto n19 = xag.create_xor(x7, x0);
+  auto n20 = xag.create_and(n19, x6);
+  auto n21 = xag.create_and(n19, n20);
+  auto n26 = xag.create_xor(x5, x0);
+  auto n27 = xag.create_xor(n26, n20);
+  auto n29 = xag.create_and(x7, n27);
+  auto n32 = xag.create_xor(n21, n29);
+
+  xag.create_po(n32);
+
+  netlist<stg_gate> qnet;
+
+  logic_network_synthesis_params ps;
+  logic_network_synthesis_stats st;
+  ps.verbose = false;
+
+  pebbling_mapping_strategy_params peb_ps;
+  peb_ps.pebble_limit=4;
+  xag_pebbling_mapping_strategy strategy (peb_ps);
+    
+  logic_network_synthesis( qnet, xag, strategy, {}, ps, &st );
+
+  auto tt_xag = simulate<kitty::static_truth_table<4>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<4>>( *ntk );
+
+  CHECK(tt_xag == tt_ntk);
+
+
+}

@@ -266,22 +266,22 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
       auto box_node = step.first;
       auto action = step.second;
 
-      auto cones = box_to_action[box_node];
+      auto [node, cones] = box_to_action[box_node];
 
-      auto cc = gen_steps( cones[0].node, cones, std::holds_alternative<compute_action>( action ));
+      auto cc = gen_steps( node, cones, std::holds_alternative<compute_action>( action ));
       xag_steps.insert(xag_steps.end(), cc.begin(), cc.end());
     }
 
     return xag_steps;
   }
 
-  abstract_network build_box_network(pebbling_view<mockturtle::xag_network> const& xag)
+  abstract_network build_box_network(mockturtle::xag_network const& xag)
   {
+    abstract_network box_ntk;
 
     std::unordered_map<node_t, abstract_network::signal> xag_to_box;
     std::vector<std::vector<uint32_t>> fi (xag.size());
 
-    auto box_ntk = abstract_network();
 
     xag.foreach_pi([&] (auto pi)
     {
@@ -295,16 +295,16 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
     {
       update_fi( node, xag, fi );
 
-      if(xag.is_and(node))
+      if(xag.is_and(node) || std::find(drivers.begin(), drivers.end(), node) != drivers.end())
       {
-        /* collect all input signals of box */
+        /* collect all the input signals of the box */
         std::vector<abstract_network::signal> box_ins;
 
         auto cones = get_cones(  node, xag, fi );
 
-        for( auto fi_box : cones)
+        for( auto c : cones)
         {
-          for (auto l : fi_box.leaves)
+          for (auto l : c.leaves)
           {
             box_ins.push_back(xag_to_box[l]);
           }
@@ -312,22 +312,20 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
 
         auto box_node_s = box_ntk.create_node(box_ins);
         xag_to_box[node] = box_node_s;
-        box_to_action[box_node_s] = cones;
+        box_to_action[box_ntk.get_node(box_node_s)] = {node, cones};
         
         if(std::find(drivers.begin(), drivers.end(), node) != drivers.end())
         {
           box_ntk.create_po(box_node_s);
         }
       }
-      //TODO : I am still assuming that all outputs are driven by an AND
-      //TODO : inversions
     });
 
     return box_ntk;
   }
 
   pebbling_mapping_strategy_params ps;
-  std::unordered_map<abstract_network::node, std::vector<action_sets>> box_to_action;
+  std::unordered_map<abstract_network::node, std::pair<node_t, std::vector<action_sets>> > box_to_action;
 
 public: 
   
@@ -337,13 +335,12 @@ public:
   bool compute_steps( mockturtle::xag_network const& ntk ) override
   {
     mockturtle::topo_view xag {ntk};
-
-    /* build the abstract network */
-    abstract_network box_ntk = build_box_network(xag);
-
     steps_abs_t store_steps;
-
+    
     auto limit = ps.pebble_limit;
+
+
+    abstract_network box_ntk = build_box_network(xag);
 
     while ( true )
     {
@@ -367,18 +364,22 @@ public:
 
       if ( result == solver.unknown() )
       {
-          return false;
+        return false;
       }
       else if ( result == solver.sat() )
       {
         store_steps = solver.extract_result();
+        
+        break;
       }
 
       if ( store_steps.empty() )
+      {
         return false;
+      }
     }
 
-    steps() = get_box_steps(store_steps);
+    this -> steps() = get_box_steps(store_steps);
     return true;
   }
 };

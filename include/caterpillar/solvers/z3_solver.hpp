@@ -24,9 +24,11 @@ namespace caterpillar
 using namespace z3;
 using namespace mockturtle;
 
+
 template<typename Ntk>
 class z3_pebble_solver
 {
+	
   
   struct variables
   {
@@ -37,10 +39,18 @@ class z3_pebble_solver
     expr_vector a;
 	};
 
+	uint32_t resp_num_pis()
+	{
+		if constexpr (std::is_same_v<Ntk, mockturtle::klut_network> || std::is_same_v<Ntk, abstract_network>)
+			return _net.num_pis() + 2;
+		else 
+			return _net.num_pis() + 1;
+	}
+
 public:
 
 	using node = node<Ntk>;
-  using result = z3::check_result;
+	using result = z3::check_result;
 
 	z3_pebble_solver(const Ntk& net, const int& pebbles, const int& max_conflicts = 0, const int& max_weight = 0)
 	:_net(net), _pebbles(pebbles), _max_weight(max_weight), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
@@ -52,16 +62,21 @@ public:
 
 		ctx.set( "max_conflicts", max_conflicts );
 
+		_net.foreach_po([&](auto po_sign)
+		{
+			o_nodes.push_back(_net.get_node(po_sign));
+		});
+
 	}
 
 	uint32_t node_to_var( node n )
 	{
-		return n - ( _net.num_pis() + 1 );
+		return n - resp_num_pis();
 	}
 
 	node var_to_node(uint32_t var)
 	{
-		return var+_net.num_pis()+1;
+		return var + resp_num_pis();
 	}
 
 	expr_vector new_variable_set(std::string s)
@@ -109,7 +124,7 @@ public:
 		{
 			_net.foreach_fanin( var_to_node( var ), [&]( auto sig ) {
 				auto ch_node = _net.get_node( sig );
-				if ( ch_node >= _net.num_pis() + 1 )
+				if ( ch_node >= resp_num_pis() )
 				{
 					slv.add( implies( current.s[var] != next.s[var], ( current.s[node_to_var( ch_node )] && next.s[node_to_var( ch_node )] ) ) );
 				}
@@ -141,13 +156,9 @@ public:
 
 	result solve()
 	{
-		std::vector<uint32_t> o_nodes;
-
+		
 		slv.push();
-		_net.foreach_po([&](auto po_sign)
-		{
-			o_nodes.push_back(_net.get_node(po_sign));
-		});
+
 
 		/* add final clauses */
 		for (auto var=0u ; var<next.s.size(); var++)
@@ -185,29 +196,47 @@ public:
 		model m = slv.get_model();
 		uint32_t w = 0;
 
+		std::cout << "\nState variables:" << std::endl;
 		for(uint32_t n=0; n<current.s.size(); n++)
 		{
-			std::cout << std::endl;
 			for(uint32_t k =0; k<num_steps+1; k++)
 			{
 				auto s = fmt::format("s_{}_{}", k, n);
 				auto s_var = m.eval(ctx.bool_const(s.c_str()));
 				if (s_var.is_true()) std::cout << "1" << "-";
 				else std::cout << "0" << "-";
+			}
+			std::cout << "\n";
+		}
 
+		std::cout << "\nActivation variables:" << std::endl;
+		for(uint32_t n=0; n<current.s.size(); n++)
+		{
+			for(uint32_t k =0; k<num_steps+1; k++)
+			{
 				auto a = fmt::format("a_{}_{}", k, n);
 				auto a_var = m.eval(ctx.bool_const(a.c_str()));
-				if (_max_weight !=0)
-				{
-					if (a_var.is_true()) 
+
+				if constexpr ( has_get_weight_v<Ntk> )
+				{	
+					
+					if (_max_weight !=0)
 					{
-						w += _net.get_weight(var_to_node(n));
-						std::cout << "y" << "+" << _net.get_weight(var_to_node(n)) << " " ;
+						if (a_var.is_true()) 
+						{
+							w += _net.get_weight(var_to_node(n));
+							std::cout << "y" << "+" << _net.get_weight(var_to_node(n)) << " " ;
+						}
+						else std::cout << "n" << "+0 ";
 					}
-					else std::cout << "n" << "+0 ";
 				}
-				
+				else
+				{
+					if (a_var.is_true()) std::cout << "1" << "-";
+					else std::cout << "0" << "-";
+				}
 			}
+			std::cout << "\n";
 		}
 		std::cout << fmt::format("\nTOT.Weight = {}\n", w);
 	}
@@ -262,64 +291,26 @@ public:
 				}
 			}
 		}
-
-
 		return steps;
 	}
 
 
 private:
-const Ntk _net;
-const int _pebbles;
-const int _max_weight;
+	const Ntk _net;
+	std::vector<uint32_t> o_nodes;
 
-context ctx;
-solver slv;
+	const int _pebbles;
+	const int _max_weight;
 
-uint32_t num_steps = 0;
-variables current;
-variables next;
+	context ctx;
+	solver slv;
+
+	uint32_t num_steps = 0;
+	variables current;
+	variables next;
 
 };
 
-/* template specifications to handle the mockturtle::klut_network structure */
-template<>
-inline uint32_t z3_pebble_solver<klut_network>::node_to_var(mockturtle::node<klut_network> n)
-{
-	return n-(this ->_net.num_pis()+2);
-}
-
-template<>
-inline mockturtle::node<klut_network> z3_pebble_solver<klut_network>::var_to_node(uint32_t var)
-{
-	return var+this ->_net.num_pis()+2;
-}
-
-template<>
-inline void z3_pebble_solver<klut_network>::add_step()
-{
-	num_steps+=1;
-
-	next.s = new_variable_set("s");
-	next.a = new_variable_set("a");
-
-	for (auto var=0u ; var<next.s.size(); var++)
-	{
-		_net.foreach_fanin( var_to_node( var ), [&]( auto sig ) {
-			auto ch_node = _net.get_node( sig );
-			if ( ch_node >= _net.num_pis() + 2 )
-			{
-				slv.add( implies( current.s[var] != next.s[var], ( current.s[node_to_var( ch_node )] && next.s[node_to_var( ch_node )] ) ) );
-			}
-		} );
-
-		slv.add( implies( current.s[var] != next.s[var], next.a[var] ) );
-		slv.add( implies( current.s[var] == next.s[var], !next.a[var] ) );
-	}
-
-	if (_pebbles != 0)	slv.add( atmost( next.s, _pebbles ) );
-	current = next;
-}
 
 }
 #endif
