@@ -19,7 +19,7 @@ using namespace mockturtle;
 TEST_CASE("create multi xor", "[create multixor]")
 {
   mxag_network mxag;
-  using signal = signal<mxag_network>;
+  using signal = mxag_network::signal;
 
   signal x1 = mxag.create_pi();
   signal x2 = mxag.create_pi();
