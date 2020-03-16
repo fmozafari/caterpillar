@@ -358,6 +358,7 @@ TEST_CASE("synthesize simple xag 9", "[XAG synthesis-9]")
 
 }
 
+#ifdef USE_Z3
 TEST_CASE("synthesize simple xag using pebbling", "[XAG pebbling synthesis]")
 {
   using namespace caterpillar;
@@ -438,3 +439,4 @@ TEST_CASE("pebble simple xag 10", "[XAG synthesis-10]")
 
 
 }
+#endif

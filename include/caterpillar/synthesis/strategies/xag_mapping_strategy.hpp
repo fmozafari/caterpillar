@@ -9,6 +9,7 @@
 #include "mapping_strategy.hpp"
 #include <caterpillar/structures/stg_gate.hpp>
 #include <caterpillar/structures/pebbling_view.hpp>
+#include <caterpillar/structures/abstract_network.hpp>
 #include <caterpillar/synthesis/strategies/pebbling_mapping_strategy.hpp>
 #include <caterpillar/solvers/z3_solver.hpp>
 #include <mockturtle/networks/xag.hpp>
@@ -23,9 +24,10 @@ namespace caterpillar
 
 using node_t = mockturtle::xag_network::node;
 using steps_xag_t = std::vector<std::pair<node_t, mapping_strategy_action>>;
+#ifdef USE_Z3
 using steps_abs_t = std::vector<std::pair<abstract_network::node, mapping_strategy_action>>;
 using SolverType = z3_pebble_solver<abstract_network>;
-
+#endif
 struct action_sets
 {
   node_t node;
@@ -245,7 +247,7 @@ public:
   }
 };
 
-
+#ifdef USE_Z3
 /*!
   \verbatim embed:rst
     This strategy is dedicated to XAG graphs and fault tolerant quantum computing.
@@ -383,6 +385,6 @@ public:
     return true;
   }
 };
-
+#endif
 
 } // namespace caterpillar

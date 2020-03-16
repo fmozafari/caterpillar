@@ -130,6 +130,7 @@ private:
   pebbling_mapping_strategy_params ps;
 };
 
+#ifdef USE_Z3
 template<class LogicNetwork>
 class weighted_pebbling_mapping_strategy : public mapping_strategy<LogicNetwork>
 {
@@ -209,4 +210,5 @@ private:
   pebbling_mapping_strategy_params ps;
 };
 
+#endif
 }

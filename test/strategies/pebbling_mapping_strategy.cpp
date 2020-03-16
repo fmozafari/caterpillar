@@ -46,7 +46,7 @@ TEST_CASE( "Pebble mapping strategy for 3-bit sorting network bsat", "[pebbling_
   CHECK( simulate<kitty::static_truth_table<3>>( sorter ) == simulate<kitty::static_truth_table<3>>( *sorter2 ) );
 }
 
-//#ifdef USE_Z3
+#ifdef USE_Z3
 TEST_CASE( "Pebble mapping strategy for 3-bit sorting network z3", "[pebbling_mapping_strategy2]" )
 {
   using namespace caterpillar;
@@ -85,7 +85,7 @@ TEST_CASE( "Pebble mapping strategy for 3-bit sorting network z3", "[pebbling_ma
   CHECK( sorter2 );
   CHECK( simulate<kitty::static_truth_table<3>>( sorter ) == simulate<kitty::static_truth_table<3>>( *sorter2 ) );
 }
-//#endif
+
 
 TEST_CASE("pebble xag using weighted nodes", "[peb. xag with weights]")
 {
@@ -172,3 +172,5 @@ TEST_CASE("pebble XAG inplace", "[pxagin]")
   CHECK( simulate<kitty::static_truth_table<4>>( xag ) == simulate<kitty::static_truth_table<4>>( *circ ) );
 
 }
+
+#endif
