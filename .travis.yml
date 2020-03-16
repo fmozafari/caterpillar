@@ -5,12 +5,7 @@ script:
   - cd build
   - cmake -DCMAKE_CXX_COMPILER=$COMPILER -DCATERPILLAR_TEST=ON -DCATERPILLAR_EXAMPLES=ON ..
   - make 
-  - cd .. 
-  - rm -rf build
-  - mkdir build
-  - cd build
-  - cmake -DCMAKE_CXX_COMPILER=$COMPILER -DCATERPILLAR_Z3=ON -DCATERPILLAR_TEST=ON -DCATERPILLAR_EXAMPLES=ON ..
-  - make 
+
 matrix:
   include:
   - os: linux
