@@ -204,14 +204,14 @@ TEST_CASE("pebble inplace simple graph 4", "[pebin4]")
 
 	CHECK( strategy[3].first == 8);
 	CHECK( strategy[4].first == 9);
-	CHECK( strategy[5].first == 8);
+	CHECK( strategy[5].first == 7);
+	CHECK(std::get<3>(strategy[5].second).target_index == 5);
 
-	CHECK( strategy[6].first == 7);
-	CHECK(std::get<3>(strategy[6].second).target_index == 5);
-	CHECK( strategy[7].first == 6);
-	CHECK(std::get<3>(strategy[7].second).target_index == 3);
-	CHECK( strategy[8].first == 5);
-	CHECK(std::get<3>(strategy[8].second).target_index == 1);
+	CHECK( strategy[6].first == 8);
+	CHECK( strategy[7].first == 5);
+	CHECK(std::get<3>(strategy[7].second).target_index == 1);
+	CHECK( strategy[8].first == 6);
+	CHECK(std::get<3>(strategy[8].second).target_index == 3);
 
 
 }

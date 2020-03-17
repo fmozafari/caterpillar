@@ -248,7 +248,8 @@ public:
 
 		for (uint32_t k = 0; k <num_steps+1; k++)
 		{
-			std::vector<std::pair<uint32_t, bool>> step_action;
+			std::vector<uint32_t> comp_act;
+			std::vector<uint32_t> uncomp_act;
 
 			for (uint32_t i = 0; i< current.s.size(); i++)
 			{
@@ -259,37 +260,23 @@ public:
 					bool s_cur = m.eval( ctx.bool_const( fmt::format("s_{}_{}", k, i).c_str() )).is_true();
 					assert (s_pre != s_cur);
 
-					step_action.push_back(std::make_pair(i, s_cur));
+					if( s_cur ) comp_act.push_back(i);
+					else uncomp_act.push_back(i);
 				}
 			}
 
-			/*sort step actions to have all the deactivations (false) first */
-			std::sort(step_action.begin(), step_action.end(), 
-				[](const std::pair<uint32_t, bool>& first, const std::pair<uint32_t, bool>& second)
-				{
-					(void)second;
-					if(!first.second)	return true;
-					else return false;
-				}
-			);
-
-			/* add actions to the pebbling strategy */
-			for(auto act : step_action)
+			/* add actions to the pebbling strategy (deactivations first)*/
+			for(auto act_node : uncomp_act)
 			{
-				auto act_node = var_to_node(act.first);
-
-				if(act.second)
-				{
-					steps.push_back({act_node, compute_action{}});
-					if( verbose ) std::cout << "compute on node " <<  act_node << std::endl;
-				}
-				else
-				{ 
-					steps.push_back({act_node, uncompute_action{}});
-					if( verbose ) std::cout << "uncompute on node " <<  act_node << std::endl;
-
-				}
+				steps.push_back({var_to_node(act_node), uncompute_action{}});
+				if( verbose ) std::cout << "uncompute on node " <<  act_node << std::endl;
 			}
+			for(auto act_node : comp_act)
+			{
+				steps.push_back({var_to_node(act_node), compute_action{}});
+				if( verbose ) std::cout << "compute on node " <<  act_node << std::endl;
+			}
+
 		}
 		return steps;
 	}

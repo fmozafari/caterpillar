@@ -337,13 +337,16 @@ public:
 
 	std::vector<std::pair<mockturtle::node<pebbling_view<Ntk>>, mapping_strategy_action>> extract_result( bool verbose = false)
 	{
+
 		model m = slv.get_model();
 		std::vector<std::pair<mockturtle::node<pebbling_view<Ntk>>, mapping_strategy_action>> steps;
 
 		for (uint32_t k = 0; k <num_steps+1; k++)
 		{
 			/* pair<node, ? computing : uncomputing> */
-			std::vector<std::pair<uint32_t, bool>> step_action;
+			std::vector<uint32_t> comp_act;
+			std::vector<uint32_t> uncomp_act;
+
 
 			for (uint32_t i = 0; i< curr.s.size(); i++)
 			{
@@ -354,25 +357,15 @@ public:
 					bool s_cur = m.eval( ctx.bool_const( fmt::format("s_{}_{}", k, i).c_str() )).is_true();
 					assert (s_pre != s_cur);
 
-					step_action.push_back(std::make_pair(i, s_cur));
+					if( s_cur ) comp_act.push_back(i);
+					else uncomp_act.push_back(i);
 				}
 			}
 
-			/* sort step actions to have all the deactivations (false) first */
-			std::sort(step_action.begin(), step_action.end(), 
-				[](const std::pair<uint32_t, bool>& first, const std::pair<uint32_t, bool>& second)
-				{
-					(void)second;
-
-					if(!first.second)	return true;
-					else return false;
-				}
-			);
 
 			/* add actions to the pebbling strategy */
-			for(auto act : step_action)
+			for(auto act_node : uncomp_act)
 			{
-				auto act_node = act.first;
 				uint64_t act_ch_node;
 				bool inplace = false;
 
@@ -390,29 +383,45 @@ public:
 				if(inplace)
 				{
 					auto target = static_cast<uint32_t>(act_ch_node);
-					if (act.second)
-					{
-						steps.push_back({act_node, compute_inplace_action{target, {}}});
-						if( verbose ) std::cout << "compute node " <<  act_node << " inplace on " << target << std::endl;
-					}
-					else
-					{
-						steps.push_back({act_node, uncompute_inplace_action{target, {}}});
-						if( verbose ) std::cout << "uncompute node " <<  act_node << " inplace on " << target << std::endl;
-					}
-				}
-				else if(act.second)
-				{
-					steps.push_back({act_node, compute_action{}});
-					if( verbose ) std::cout << "compute node " <<  act_node << std::endl;
+					steps.push_back({act_node, uncompute_inplace_action{target, {}}});
+					if( verbose ) std::cout << "uncompute node " <<  act_node << " inplace on " << target << std::endl;
+					
 				}
 				else
 				{ 
 					steps.push_back({act_node, uncompute_action{}});
 					if( verbose ) std::cout << "uncompute node " <<  act_node << std::endl;
 				}
-				
-				
+			}
+
+			for(auto act_node : comp_act)
+			{
+				uint64_t act_ch_node;
+				bool inplace = false;
+
+				_net.foreach_fanin(act_node, [&] (const auto fi)
+				{
+					uint64_t node_fi = _net.get_node(fi);
+					auto i_var = fmt::format("i_{}_{}", k, node_fi).c_str();
+					if (m.eval(ctx.bool_const(i_var)).is_true())
+					{
+						inplace = true;
+						act_ch_node = node_fi;
+					}
+				});
+
+				if(inplace)
+				{
+					auto target = static_cast<uint32_t>(act_ch_node);
+
+					steps.push_back({act_node, compute_inplace_action{target, {}}});
+					if( verbose ) std::cout << "compute node " <<  act_node << " inplace on " << target << std::endl;
+				}
+				else
+				{
+					steps.push_back({act_node, compute_action{}});
+					if( verbose ) std::cout << "compute node " <<  act_node << std::endl;
+				}	
 			}
 		}
 
