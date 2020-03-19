@@ -61,9 +61,9 @@ inline bool is_included(std::vector<uint32_t> first, std::vector<uint32_t> secon
 }
 
 
-inline void update_fi( node_t node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>>& fi)
+inline void update_fi( node_t node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>>& fi, std::vector<node_t> const& drivers )
 {
-  if ( xag.is_and( node ) || xag.is_pi(node))
+  if ( xag.is_and( node ) || xag.is_pi(node) || (std::find(drivers.begin(), drivers.end(), node) != drivers.end()))
   {
     fi[ xag.node_to_index(node) ] = { xag.node_to_index(node) };
   }
@@ -93,7 +93,7 @@ inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network
 
   assert( cones.size() == 2 );
 
-  // if one fanin is AND or PI symply delete f
+  // if one fanin is AND or PI or PO symply delete f
   if ( (cones[0].leaves.size() == 1) != (cones[1].leaves.size() == 1) )
   {
     if ( xag.is_xor( cones[1].node ) )
@@ -213,7 +213,7 @@ public:
 
     xag.foreach_node( [&]( auto node ) {
       
-      update_fi( node, xag, fi );
+      update_fi( node, xag, fi, drivers );
 
       if ( xag.is_and( node ) || std::find( drivers.begin(), drivers.end(), node ) != drivers.end() )
       {
@@ -295,7 +295,7 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
 
     xag.foreach_node([&] (auto node)
     {
-      update_fi( node, xag, fi );
+      update_fi( node, xag, fi, drivers );
 
       if(xag.is_and(node) || std::find(drivers.begin(), drivers.end(), node) != drivers.end())
       {
@@ -303,7 +303,6 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
         std::vector<abstract_network::signal> box_ins;
 
         auto cones = get_cones(  node, xag, fi );
-
         for( auto c : cones)
         {
           for (auto l : c.leaves)
@@ -311,7 +310,7 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
             box_ins.push_back(xag_to_box[l]);
           }
         }
-
+        
         auto box_node_s = box_ntk.create_node(box_ins);
         xag_to_box[node] = box_node_s;
         box_to_action[box_ntk.get_node(box_node_s)] = {node, cones};
