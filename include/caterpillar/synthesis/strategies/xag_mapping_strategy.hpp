@@ -341,13 +341,14 @@ public:
     
     auto limit = ps.pebble_limit;
 
-
+    if(ps.progress) std::cout << "[i]  Generate box network... \n";
     abstract_network box_ntk = build_box_network(xag);
 
     while ( true )
     {
       SolverType solver( box_ntk, limit, ps.conflict_limit );
 
+      if(ps.progress) std::cout << "[i]  Initialize solver... \n";
       solver.init();
 
       typename SolverType::result result;
@@ -361,15 +362,19 @@ public:
         }
 
         solver.add_step();
+        if(ps.progress) std::cout << "[i]  ...   step "<< solver.current_step() << "... \n";
+
         result = solver.solve(); 
       } while ( result == solver.unsat() );
 
       if ( result == solver.unknown() )
       {
+        if(ps.progress) std::cout << "[error] Unknown solution!\n";
         return false;
       }
       else if ( result == solver.sat() )
       {
+        if(ps.progress) std::cout << "[i] Found valid strategy!\n";
         store_steps = solver.extract_result();
         
         break;
@@ -380,7 +385,7 @@ public:
         return false;
       }
     }
-
+    if(ps.progress) std::cout << "[i] Extract the XAG strategy ...\n";
     this -> steps() = get_box_steps(store_steps);
     return true;
   }
