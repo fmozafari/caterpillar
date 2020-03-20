@@ -439,4 +439,60 @@ TEST_CASE("pebble simple xag 10", "[XAG synthesis-10]")
 
 
 }
+
+TEST_CASE("pebble simple xag 11", "[XAG synthesis-11]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+
+  auto xag = xag_network();
+
+  auto z0 = xag.create_pi();
+  auto z1 = xag.create_pi();
+  auto z3 = xag.create_pi();
+  auto z4 = xag.create_pi();
+  auto z6 = xag.create_pi();
+  auto z7 = xag.create_pi();
+  auto z9 = xag.create_pi();
+  auto z10 = xag.create_pi();
+  auto z15 = xag.create_pi();
+  auto z16 = xag.create_pi();
+
+  auto t46 = xag.create_xor(z15 , z16);
+  auto t49 = xag.create_xor(z9 , z10);
+  auto t53 = xag.create_xor(z0 , z3);
+  auto t54 = xag.create_xor(z6 , z7);
+  auto t58 = xag.create_xor(z4 , t46);
+  auto t59 = xag.create_xor(z3 , t54);
+  auto t63 = xag.create_xor(t49 , t58);
+  auto t64 = xag.create_xor(z4 , t59);
+  auto t66 = xag.create_xor(z1 , t63);
+  auto s3 = xag.create_xor(t53 , t66);
+  auto s1pre = xag.create_xor(t64 , s3);
+  auto s1 = xag.create_not(s1pre);
+
+  xag.create_po(s3);
+  xag.create_po(s1);
+
+
+  netlist<stg_gate> qnet;
+
+  logic_network_synthesis_params ps;
+  logic_network_synthesis_stats st;
+  ps.verbose = false;
+
+  pebbling_mapping_strategy_params peb_ps;
+  peb_ps.pebble_limit=28;
+  xag_pebbling_mapping_strategy strategy (peb_ps);
+    
+  logic_network_synthesis( qnet, xag, strategy, {}, ps, &st );
+
+  auto tt_xag = simulate<kitty::static_truth_table<10>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<10>>( *ntk );
+
+  CHECK(tt_xag == tt_ntk);
+
+}
 #endif
