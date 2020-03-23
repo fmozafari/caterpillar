@@ -1,8 +1,10 @@
 #pragma once
 
-
+#include <chrono>
 #include <mockturtle/utils/progress_bar.hpp>
 #include <caterpillar/synthesis/strategies/action.hpp>
+
+using namespace std::chrono;
 
 namespace caterpillar
 {
@@ -23,6 +25,9 @@ struct pebbling_mapping_strategy_params
 
   /*! \brief Conflict limit for the SAT solver (0 means no limit). */
   uint32_t conflict_limit{0u};
+
+  /*! \brief Timeout for the iterative quests. */
+  uint32_t timeout{180};
 
   /*! \brief Increment pebble numbers, if a failure occurs. */
   bool increment_on_failure{false};
@@ -47,13 +52,13 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
   while ( true )
   {
     Solver solver( ntk, limit, ps.conflict_limit, ps.max_weight );
+    typename Solver::result result;
 
     solver.init();
 
     mockturtle::progress_bar bar( 100, "|{0}| current step = {1}", ps.progress );
 
-    typename Solver::result result;
-
+    auto start = high_resolution_clock::now(); 
     do
     {
       if ( solver.current_step() >= ps.max_steps )
@@ -66,9 +71,10 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
 
       solver.add_step();
       result = solver.solve(); 
-    } while ( result == solver.unsat() );
+    } while ( result == solver.unsat() && 
+        duration_cast<seconds>(high_resolution_clock::now() - start).count() <= ps.timeout);
 
-    if ( result == solver.unknown() )
+    if ( result == solver.unknown() || result == solver.unsat() )
     {
       if ( ps.increment_on_failure )
       {
