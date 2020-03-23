@@ -7,6 +7,7 @@
 #pragma once
 
 #include "mapping_strategy.hpp"
+#include <caterpillar/solvers/solver_manager.hpp>
 #include <caterpillar/structures/stg_gate.hpp>
 #include <caterpillar/structures/pebbling_view.hpp>
 #include <caterpillar/structures/abstract_network.hpp>
@@ -335,56 +336,22 @@ public:
 
   bool compute_steps( mockturtle::xag_network const& ntk ) override
   {
+    using solver_t = z3_pebble_solver<abstract_network>;
     mockturtle::topo_view xag {ntk};
     steps_abs_t store_steps;
     
-    auto limit = ps.pebble_limit;
 
     if(ps.progress) std::cout << "[i]  Generate box network... \n";
     abstract_network box_ntk = build_box_network(xag);
 
-    while ( true )
-    {
-      SolverType solver( box_ntk, limit, ps.conflict_limit );
+    store_steps = pebble<solver_t, abstract_network> (box_ntk, ps);
 
-      if(ps.progress) std::cout << "[i]  Initialize solver... \n";
-      solver.init();
+    if ( store_steps.empty() )
+      return false;
 
-      typename SolverType::result result;
 
-      do
-      {
-        if ( solver.current_step() >= ps.max_steps )
-        {
-          result = solver.unknown();
-          break;
-        }
-
-        solver.add_step();
-        if(ps.progress) std::cout << "[i]  ...   step "<< solver.current_step() << "... \n";
-
-        result = solver.solve(); 
-      } while ( result == solver.unsat() );
-
-      if ( result == solver.unknown() )
-      {
-        if(ps.progress) std::cout << "[error] Unknown solution!\n";
-        return false;
-      }
-      else if ( result == solver.sat() )
-      {
-        if(ps.progress) std::cout << "[i] Found valid strategy!\n";
-        store_steps = solver.extract_result();
-        
-        break;
-      }
-
-      if ( store_steps.empty() )
-      {
-        return false;
-      }
-    }
     if(ps.progress) std::cout << "[i] Extract the XAG strategy ...\n";
+
     this -> steps() = get_box_steps(store_steps);
     return true;
   }

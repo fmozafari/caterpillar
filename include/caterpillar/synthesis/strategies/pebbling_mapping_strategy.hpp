@@ -11,9 +11,7 @@
 #include <vector>
 
 #include "mapping_strategy.hpp"
-
-#include <mockturtle/utils/progress_bar.hpp>
-
+#include <caterpillar/solvers/solver_manager.hpp>
 #include <caterpillar/solvers/z3_solver.hpp>
 
 namespace caterpillar
@@ -21,30 +19,6 @@ namespace caterpillar
 
 namespace mt = mockturtle;
 
-struct pebbling_mapping_strategy_params
-{
-  /*! \brief Show progress bar. */
-  bool progress{false};
-
-  /*! \brief Maximum number of pebbles to use, if supported by mapping strategy (0 means no limit). */
-  uint32_t pebble_limit{0u};
-
-  /*! \brief Maximum number of steps */
-  uint32_t max_steps{100000};
-
-  /*! \brief max_weight */
-  uint32_t max_weight{0u};
-
-  /*! \brief Conflict limit for the SAT solver (0 means no limit). */
-  uint32_t conflict_limit{0u};
-
-  /*! \brief Increment pebble numbers, if a failure occurs. */
-  bool increment_on_failure{false};
-
-  /*! \brief Decrement pebble numbers, if satisfiable. */
-  bool decrement_on_success{false};
-
-};
 
 /*!
   \verbatim embed:rst
@@ -70,60 +44,14 @@ public:
 
   bool compute_steps( LogicNetwork const& ntk ) override
   {
-    assert( !ps.decrement_on_success || !ps.increment_on_failure );
+    
+    this->steps() = pebble<Solver, LogicNetwork> (ntk, ps);
 
-    auto limit = ps.pebble_limit;
-    assert ( ps.max_weight == 0 && "[error] conditions on the maximum weight are not supported, use weighted_pebbling_mapping_strategy instead ! ");
+    if ( this->steps().empty() )
+      return false;
 
-    while ( true )
-    {
-      Solver solver( ntk, limit, ps.conflict_limit );
-
-      solver.init();
-
-      mockturtle::progress_bar bar( 100, "|{0}| current step = {1}", ps.progress );
-
-      typename Solver::result result;
-
-      do
-      {
-        if ( solver.current_step() >= ps.max_steps )
-        {
-          result = solver.unknown();
-          break;
-        }
-
-        bar( std::min<uint32_t>( solver.current_step(), 100 ), solver.current_step() );
-
-        solver.add_step();
-        result = solver.solve(); 
-      } while ( result == solver.unsat() );
-
-      if ( result == solver.unknown() )
-      {
-        if ( ps.increment_on_failure )
-        {
-          limit++;
-          continue;
-        }
-        else if ( !ps.decrement_on_success )
-          return false;
-      }
-      else if ( result == solver.sat() )
-      {
-        this->steps() = solver.extract_result();
-        if ( ps.decrement_on_success )
-        {
-          limit--;
-          continue;
-        }
-      }
-
-      if ( this->steps().empty() )
-        return false;
-
-      return true;
-    }
+    return true;
+    
   }
 
 private:
@@ -152,58 +80,12 @@ public:
   {
     using Solver = z3_pebble_solver<LogicNetwork>;
 
-    assert( !ps.decrement_on_success || !ps.increment_on_failure );
+    this->steps() = pebble<Solver, LogicNetwork> (ntk, ps);
 
-    auto limit = ps.pebble_limit;
-    while ( true )
-    {
-      Solver solver( ntk, limit, ps.conflict_limit,  ps.max_weight );
+    if ( this->steps().empty() )
+      return false;
 
-      solver.init();
-
-      mockturtle::progress_bar bar( 100, "|{0}| current step = {1}", ps.progress );
-
-      typename Solver::result result;
-
-      do
-      {
-        if ( solver.current_step() >= ps.max_steps )
-        {
-          result = solver.unknown();
-          break;
-        }
-
-        bar( std::min<uint32_t>( solver.current_step(), 100 ), solver.current_step() );
-
-        solver.add_step();
-        result = solver.solve(); 
-      } while ( result == solver.unsat() );
-
-      if ( result == solver.unknown() )
-      {
-        if ( ps.increment_on_failure )
-        {
-          limit++;
-          continue;
-        }
-        else if ( !ps.decrement_on_success )
-          return false;
-      }
-      else if ( result == solver.sat() )
-      {
-        this->steps() = solver.extract_result();
-        if ( ps.decrement_on_success )
-        {
-          limit--;
-          continue;
-        }
-      }
-
-      if ( this->steps().empty() )
-        return false;
-
-      return true;
-    }
+    return true;
   }
 
 private:
