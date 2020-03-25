@@ -87,7 +87,7 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
     else if ( result == solver.sat() )
     {
       steps = solver.extract_result();
-      if ( ps.decrement_on_success )
+      if ( ps.decrement_on_success && limit > 1)
       {
         limit--;
         continue;

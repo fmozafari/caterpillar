@@ -49,6 +49,7 @@
 #include <caterpillar/verification/circuit_to_logic_network.hpp>
 #include <tweedledum/networks/netlist.hpp>
 #include <mockturtle/algorithms/simulation.hpp>
+#include <mockturtle/networks/xag.hpp>
 #include <kitty/dynamic_truth_table.hpp>
 
 namespace experiments
@@ -379,7 +380,63 @@ bool check_equivalence(Ntk const& ntk, tweedledum::netlist<caterpillar::stg_gate
   return (tt_ntk == tt_rev);
 }
 
+inline std::pair<int, int> xag_stats(mockturtle::xag_network const& ntk)
+{
+  auto n_and = 0;
+  auto n_xor = 0;
+  ntk.foreach_gate([&] (auto const& node)
+  {
+    if(ntk.is_and(node))
+    {
+      n_and++;
+    }
+    else if(ntk.is_xor(node))
+    {
+      n_xor++;
+    }
+  });
+  return {n_and, n_xor};
+}
+
+/* finds T-count, T-depth and #CNOT for {X, CNOT, CCNOT} circuits where all CCNOT are computed on a clean helper line */
+inline std::tuple<int, int, int> qc_stats(tweedledum::netlist<caterpillar::stg_gate> const& ntk)
+{
+  auto Tcount = 0;
+  auto CNOT = 0;
+
+  std::vector<int> depths (ntk.num_qubits());
+  std::vector<bool> mask (ntk.num_qubits());
 
 
+  ntk.foreach_cgate([&] (auto& gate)
+  {
+    assert(gate.gate.num_controls() <= 2);
+
+    if (gate.gate.num_controls() == 1) 
+      CNOT++;
+    else if(gate.gate.num_controls() == 2)
+    {
+      auto t = gate.gate.targets()[0];
+      if (!mask[t])
+      {
+      
+        gate.gate.foreach_control([&] (auto& c)
+        {
+          depths[c] = depths[c] + 1;
+        });
+
+        depths[t] = depths[t] + 2;
+
+        Tcount = Tcount + 4;
+      }
+      mask[t] = !(mask[t]);
+    }
+    
+  });
+
+
+  auto Tdepth = depths[std::max_element(depths.begin(), depths.end()) - depths.begin()];
+  return { CNOT, Tcount, Tdepth}; 
+}
 
 } // namespace experiments
