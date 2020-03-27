@@ -398,8 +398,38 @@ inline std::pair<int, int> xag_stats(mockturtle::xag_network const& ntk)
   return {n_and, n_xor};
 }
 
+/* returns the number of AND levels and the maximum number of AND in one level */
+inline std::pair<uint32_t, uint32_t> and_depth(mockturtle::xag_network const& ntk)
+{
+  auto and_depth = 0u;
+  auto max_and_count = 0u;
+  mockturtle::depth_view xag (ntk);
+  std::vector<std::vector<uint32_t>> levels (xag.depth());
+
+  xag.foreach_node( [&]( auto n ) {
+    if( xag.is_and(n) ) 
+      levels[xag.level(n)-1].push_back(n); 
+  });
+
+  for(auto& l : levels)
+  {
+    fmt::print("{}", fmt::join(l, " "));
+    std::cout << "\n";
+    auto count = l.size();
+    if(count!=0)
+    {
+      and_depth++;
+      if (count > max_and_count)
+        max_and_count = count;
+    }
+    
+  }
+
+  return {and_depth, max_and_count};
+}
+
 /* finds T-count, T-depth and #CNOT for {X, CNOT, CCNOT} circuits where all CCNOT are computed on a clean helper line */
-inline std::tuple<int, int, int> qc_stats(tweedledum::netlist<caterpillar::stg_gate> const& ntk)
+inline std::tuple<int, int, int> qc_stats(tweedledum::netlist<caterpillar::stg_gate> const& ntk, bool use_tdepth1 = false)
 {
   auto Tcount = 0;
   auto CNOT = 0;
@@ -411,22 +441,28 @@ inline std::tuple<int, int, int> qc_stats(tweedledum::netlist<caterpillar::stg_g
   ntk.foreach_cgate([&] (auto& gate)
   {
     assert(gate.gate.num_controls() <= 2);
+    auto t = gate.gate.targets()[0];
 
-    if (gate.gate.num_controls() == 1) 
+    if (gate.gate.num_controls() == 1)
+    { 
       CNOT++;
+
+      auto c = gate.gate.controls()[0];
+      depths[t] = std::max(depths[c], depths[t]);
+    }
     else if(gate.gate.num_controls() == 2)
     {
-      auto t = gate.gate.targets()[0];
+      auto c1 = gate.gate.controls()[0];
+      auto c2 = gate.gate.controls()[1];
       if (!mask[t])
       {
-      
+
+        depths[t] = use_tdepth1 ? std::max(std::max(depths[t] + 1, depths[c1]+1), depths[c2]+1)  : std::max(std::max(depths[t] + 2, depths[c1]+1), depths[c2]+1);
+
         gate.gate.foreach_control([&] (auto& c)
         {
           depths[c] = depths[c] + 1;
         });
-
-        depths[t] = depths[t] + 2;
-
         Tcount = Tcount + 4;
       }
       mask[t] = !(mask[t]);

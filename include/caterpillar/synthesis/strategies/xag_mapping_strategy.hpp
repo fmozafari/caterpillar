@@ -437,18 +437,24 @@ public:
       for(auto n : lvl)
       {
         auto cones = get_cones(n, xag, fi);
-        auto tot_l = concat(cones[0].leaves, cones[1].leaves);
-        std::vector<uint32_t> cp;
-        for (auto l : tot_l)
+
+        if(xag.is_and(n))
         {
-          if(std::find(used.begin(), used.end(), l ) != used.end())
+          auto tot_l = concat(cones[0].leaves, cones[1].leaves);
+          std::vector<uint32_t> cp;
+          for (auto l : tot_l)
           {
-            to_be_copied.push_back(l);
-            cp.push_back(l);
+            if(std::find(used.begin(), used.end(), l ) != used.end())
+            {
+              to_be_copied.push_back(l);
+              cp.push_back(l);
+            }
+            used.push_back(l);
           }
-          used.push_back(l);
+          node_and_action[n] = {cones, cp};
         }
-        node_and_action[n] = {cones, cp};
+        else //xor outputs do not need to use copies
+          node_and_action[n] = {cones, {}};
       }
       std::cout << "insert copies\n";
 
