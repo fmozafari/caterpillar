@@ -15,6 +15,7 @@
 #include <caterpillar/solvers/z3_solver.hpp>
 #include <mockturtle/networks/xag.hpp>
 #include <mockturtle/views/topo_view.hpp>
+#include <mockturtle/views/depth_view.hpp>
 #include <tweedledum/networks/netlist.hpp>
 
 #include <algorithm>
@@ -139,7 +140,7 @@ inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network
   return cones;
 }
 
-inline steps_xag_t gen_steps( node_t node, std::vector<action_sets>& cones, bool compute)
+inline steps_xag_t gen_steps( node_t node, std::vector<action_sets>& cones, bool compute, std::vector<uint32_t> const& cps = {})
 {
   steps_xag_t comp_steps;
 
@@ -149,17 +150,29 @@ inline steps_xag_t gen_steps( node_t node, std::vector<action_sets>& cones, bool
     if (ch.leaves.size() > 1){
       if ( !ch.target.empty() )
       {
-        comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
+        if (cps.empty())
+          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves, std::nullopt}} );
+        else 
+          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves, cps}} );
       }
       else 
       {
-        comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt }} );
+        if (cps.empty())
+          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt, std::nullopt}} );
+        else 
+          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, cps, std::nullopt}} );
+
       }
     }
   }
-
+  
   if(compute)
-    comp_steps.push_back( {node, compute_action{}} );
+  {
+    if (cps.empty())
+      comp_steps.push_back( {node, compute_action{}} );
+    else
+      comp_steps.push_back( {node, compute_action{std::nullopt, cps, std::nullopt}} );
+  }
   else 
   {
     comp_steps.push_back( {node, uncompute_action{}} );
@@ -173,15 +186,24 @@ inline steps_xag_t gen_steps( node_t node, std::vector<action_sets>& cones, bool
     if (ch.leaves.size() > 1){
       if ( !ch.target.empty() )
       {
-        comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
+        if (cps.empty())
+          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves, std::nullopt}} );
+        else 
+          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves, cps}} );
       }
       else 
       {
-        comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt}} );
+        if (cps.empty())
+          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt, std::nullopt}} );
+        else 
+          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, cps, std::nullopt}} );
+
       }
     }
   }
-
+  for(auto& cp : cps)
+    comp_steps.push_back({cp, uncompute_copy_action{}});
+  
   return comp_steps;
 }
 
@@ -358,4 +380,108 @@ public:
 };
 #endif
 
+
+
+/*!
+  \verbatim embed:rst
+    This strategy is dedicated to XAG graphs and fault tolerant quantum computing.
+    It creates an abstract graph from the XAG, each box node in the abstract graph corresponds to 
+    AND nodes and its linear transitive fanin cones.
+    Pebbling is played on the abstract graph.
+  \endverbatim
+*/
+class xag_low_depth_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
+{
+  template<class T>
+  T concat (T f, T const& s)
+  {
+    f.insert(f.end(), s.begin(), s.end());
+    return f;
+  }
+public: 
+  
+  bool compute_steps( mockturtle::xag_network const& ntk ) override
+  {
+    // the strategy proceeds in topological order and level by level
+    mockturtle::topo_view xag_t {ntk};
+    mockturtle::depth_view xag {xag_t};
+
+    std::cout << "update fi\n";
+    std::vector<std::vector<uint32_t>> fi (xag.size());
+
+    std::vector<node_t> drivers;
+    xag.foreach_po( [&]( auto const& f ) { drivers.push_back( xag.get_node( f ) ); } );
+
+    std::vector<std::vector<node_t>> levels (xag.depth());
+                                                                 
+    xag.foreach_node( [&]( auto n ) {
+      update_fi( n, xag, fi, drivers );
+
+      if( xag.is_and(n) || std::find( drivers.begin(), drivers.end(), n ) != drivers.end() ) 
+        levels[xag.level(n)-1].push_back(n);
+      
+    });
+    
+    auto it = steps().begin();
+
+    for(auto lvl : levels){ if(lvl.size() != 0)
+    {
+      std::cout << "new level\n";
+
+      std::map< node_t, std::pair<std::vector<action_sets>, std::vector<uint32_t>> > node_and_action;
+      
+      std::vector<uint32_t> used;
+      std::vector<uint32_t> to_be_copied;
+
+      std::cout << "get copies\n";
+      for(auto n : lvl)
+      {
+        auto cones = get_cones(n, xag, fi);
+        auto tot_l = concat(cones[0].leaves, cones[1].leaves);
+        std::vector<uint32_t> cp;
+        for (auto l : tot_l)
+        {
+          if(std::find(used.begin(), used.end(), l ) != used.end())
+          {
+            to_be_copied.push_back(l);
+            cp.push_back(l);
+          }
+          used.push_back(l);
+        }
+        node_and_action[n] = {cones, cp};
+      }
+      std::cout << "insert copies\n";
+
+      for(auto l : to_be_copied)
+      {
+        it = steps().insert(it, {l, compute_copy_action{}} );
+        it = it + 1;
+      }
+      for (auto n : lvl)
+      {
+        //insert 
+        std::cout << "generate steps node " << n << "\n";
+        fmt::print("{}", fmt::join(node_and_action[n].second, ","));
+        std::cout << "\n";
+
+        auto cc = gen_steps(n, node_and_action[n].first, true, node_and_action[n].second);
+
+        it = steps().insert(it, cc.begin(), cc.end());
+        it = it + cc.size();        
+
+
+        if ( std::find( drivers.begin(), drivers.end(), n ) == drivers.end()  )
+        { 
+          auto uc = gen_steps( n , node_and_action[n].first, false);
+          it = steps().insert( it, uc.begin(), uc.end() );
+        }
+
+        
+      }
+    }
+    }
+    std::cout << "computed strategy\n";
+    return true;
+  }
+};
 } // namespace caterpillar

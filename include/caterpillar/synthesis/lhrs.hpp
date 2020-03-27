@@ -92,6 +92,30 @@ public:
       std::visit(
           overloaded{
               []( auto ) {},
+              [&]( compute_copy_action const& action ) {
+                (void)action;
+                const auto t = request_ancilla();
+                
+                if ( ps.verbose )
+                {
+                  std::cout << "[i] copy " << ntk.node_to_index( node ) << " to qubit " << t << "\n";
+                }
+   
+                copy_node( node, t );
+                copies[node].push(t);
+              },
+              [&]( uncompute_copy_action const& action ) {
+                (void)action;
+                const auto t = copies[node].top();
+                
+                if ( ps.verbose )
+                {
+                  std::cout << "[i] uncopy " << ntk.node_to_index( node ) << " from qubit " << t << "\n";
+                }
+                copy_node( node, t );
+                copies[node].pop();
+
+              },
               [&]( compute_action const& action ) {
                 const auto t = node_to_qubit[node] = request_ancilla();
                 if ( ps.verbose )
@@ -114,11 +138,20 @@ public:
                 }
                 else if (action.leaves)
                 {
+                  if (action.copies)
+                    compute_big_xor(t, *action.leaves, *action.copies);
+                  else
                   compute_big_xor( t, *action.leaves );
                 }
                 else
                 {
+                  if (action.copies)
+                  {
+                    compute_node( node, t, *action.copies );
+                  }
+                  else
                   compute_node( node, t );
+                  
                 }
               },
               [&]( uncompute_action const& action ) {
@@ -154,7 +187,7 @@ public:
               [&]( compute_inplace_action const& action ) {
                 if ( ps.verbose )
                 {  
-                  std::cout << "[i] compute " << ntk.node_to_index( node ) << " inplace onto " << action.target_index << " in qubit " << node_to_qubit[ntk.index_to_node( action.target_index )];
+                  std::cout << "[i] compute " << ntk.node_to_index( node ) << " inplace onto node " << action.target_index << "\n";
                   if ( action.leaves )
                   {
                     std::cout << " with leaves: ";
@@ -165,14 +198,31 @@ public:
                   }
                   std::cout << "\n";
                 }
-                const auto t = node_to_qubit[node] = node_to_qubit[ntk.index_to_node( action.target_index )];
+                node_to_qubit[node] = node_to_qubit[ntk.index_to_node( action.target_index )];
+                const auto t = ntk.index_to_node( action.target_index );
                 if (action.leaves)
                 {
+                  if (action.copies)
+                  {
+                    std::vector<uint32_t> cps = *action.copies;
+                    compute_big_xor(t, *action.leaves, cps);
+
+                    if(std::find(cps.begin(), cps.end(), t) != cps.end())
+                      node_to_qubit[node] = copies[t].top();
+                  }
+                  else
+                  {
                   compute_big_xor( t, *action.leaves );
+                }
                 }
                 else
                 {
-                  compute_node_inplace( node, t );
+                   if (action.copies)
+                   {
+                    compute_node_inplace( node, node_to_qubit[t] , *action.copies);
+                }
+                  else
+                    compute_node_inplace( node, node_to_qubit[t] );
                 }
               },
               [&]( uncompute_inplace_action const& action ) {
@@ -302,31 +352,56 @@ private:
     return controls;
   }
 
-  void compute_big_xor( uint32_t t, std::vector<uint32_t> leaves)
+  void compute_big_xor( uint32_t target, std::vector<uint32_t> leaves, std::vector<uint32_t> cps = {})
   {
     assert( leaves.size() > 1);
     for ( auto control : leaves )
     {
-      if(node_to_qubit[control] != t)
+      if (control != target)
       {
-        qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( node_to_qubit[control] ), tweedledum::qubit_id( t ) );
+        auto c = std::find(cps.begin(), cps.end(), control) == cps.end() ? node_to_qubit[control] : copies[control].top();
+        auto t = std::find(cps.begin(), cps.end(), target) == cps.end() ? node_to_qubit[target] : copies[target].top();
+     
+        qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( c ), tweedledum::qubit_id( t ) );
       }
     }
   }
 
+  void copy_node( uint32_t node, uint32_t t )
+  {
+    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( node_to_qubit[node] ), tweedledum::qubit_id( t ) );
+  }
 
-  void compute_node( mt::node<LogicNetwork> const& node, uint32_t t )
+  void compute_node( mt::node<LogicNetwork> const& node, uint32_t t,  std::vector<uint32_t> cps = {})
   {
     if constexpr ( mt::has_is_and_v<LogicNetwork> )
     {
       if ( ntk.is_and( node ) )
       {
         auto controls = get_fanin_as_literals<2>( node );
+        auto node0 = ntk.index_to_node( controls[0] >> 1 );
+        auto node1 = ntk.index_to_node( controls[1] >> 1 );
 
         SetQubits pol_controls;
-        pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[0] >> 1 )], controls[0] & 1 );
-        pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )], controls[1] & 1 );
+   
+        if(std::find(cps.begin(), cps.end(), node0) != cps.end())
+        {
+          pol_controls.emplace_back( copies[node0].top(), controls[0] & 1 );
+        }
+        else
+        {
+          pol_controls.emplace_back( node_to_qubit[node0], controls[0] & 1 );
+        }
 
+        if(std::find(cps.begin(), cps.end(), node1) != cps.end())
+        {
+          pol_controls.emplace_back( copies[node1].top(), controls[1] & 1 );
+        }
+        else
+        {
+          pol_controls.emplace_back( node_to_qubit[node1], controls[1] & 1 );
+        }
+        
         compute_and( pol_controls, t );
         return;
       }
@@ -353,7 +428,7 @@ private:
         auto controls = get_fanin_as_literals<2>( node );
         compute_xor( node_to_qubit[ntk.index_to_node( controls[0] >> 1 )],
                      node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
-                     ( controls[0] & 1 ) != ( controls[1] & 1 ), t );
+                     ( controls[0] & 1 ) != ( controls[1] & 1 ), t, cps );
         return;
       }
     }
@@ -369,7 +444,7 @@ private:
           compute_xor( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
                        node_to_qubit[ntk.index_to_node( controls[2] >> 1 )],
                        ( ( controls[0] & 1 ) != ( controls[1] & 1 ) ) != ( controls[2] & 1 ),
-                       t );
+                       t , cps);
         }
         else
         {
@@ -455,7 +530,7 @@ private:
     compute_lut( func, controls, tweedledum::qubit_id( t ) );
   }
 
-  void compute_node_inplace( mt::node<LogicNetwork> const& node, uint32_t t )
+  void compute_node_inplace( mt::node<LogicNetwork> const& node, uint32_t t, std::vector<uint32_t> const& cps = {} )
   {
     if constexpr ( mt::has_is_xor_v<LogicNetwork> )
     {
@@ -464,7 +539,7 @@ private:
         auto controls = get_fanin_as_literals<2>( node );
         compute_xor_inplace( node_to_qubit[ntk.index_to_node( controls[0] >> 1 )],
                              node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
-                             ( controls[0] & 1 ) != ( controls[1] & 1 ), t );
+                             ( controls[0] & 1 ) != ( controls[1] & 1 ), t , cps);
         return;
       }
     }
@@ -513,10 +588,13 @@ private:
     qnet.add_gate( tweedledum::gate::pauli_x, tweedledum::qubit_id( t ) );
   }
 
-  void compute_xor( uint32_t c1, uint32_t c2, bool inv, uint32_t t )
+  void compute_xor( uint32_t c1, uint32_t c2, bool inv, uint32_t t, std::vector<uint32_t> const& cps = {})
   {
-    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( c1 ), tweedledum::qubit_id( t ) );
-    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( c2 ), tweedledum::qubit_id( t ) );
+    auto new_c1 = (std::find(cps.begin(), cps.end(), c1) == cps.end()) ? c1 : copies[c1].top();
+    auto new_c2 = (std::find(cps.begin(), cps.end(), c2) == cps.end()) ? c2 : copies[c2].top();
+
+    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( new_c1 ), tweedledum::qubit_id( t ) );
+    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( new_c2 ), tweedledum::qubit_id( t ) );
     if ( inv )
       qnet.add_gate( tweedledum::gate::pauli_x, tweedledum::qubit_id( t ) );
   }
@@ -576,8 +654,11 @@ private:
     stg_fn( qnet, qubit_map, function );
   }
 
-  void compute_xor_inplace( uint32_t c1, uint32_t c2, bool inv, uint32_t t )
+  void compute_xor_inplace( uint32_t oc1, uint32_t oc2, bool inv, uint32_t t, std::vector<uint32_t> const& cps = {} )
   {
+    auto c1 = (std::find(cps.begin(), cps.end(), oc1) == cps.end()) ? oc1 : copies[oc1].top();
+    auto c2 = (std::find(cps.begin(), cps.end(), oc2) == cps.end()) ? oc2 : copies[oc2].top();
+
     if ( c1 == t && c2 != t)
     {
       qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( c2 ), c1 );
@@ -632,6 +713,7 @@ private:
   logic_network_synthesis_stats& st;
   mt::node_map<uint32_t, LogicNetwork> node_to_qubit;
   std::stack<uint32_t> free_ancillae;
+  std::unordered_map<uint32_t, std::stack<uint32_t>> copies;
 }; // namespace detail
 
 } // namespace detail

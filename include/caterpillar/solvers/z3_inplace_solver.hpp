@@ -414,7 +414,7 @@ public:
 				{
 					auto target = static_cast<uint32_t>(act_ch_node);
 
-					steps.push_back({act_node, compute_inplace_action{target, {}}});
+					steps.push_back({act_node, compute_inplace_action{target, {}, {}}});
 					if( verbose ) std::cout << "compute node " <<  act_node << " inplace on " << target << std::endl;
 				}
 				else

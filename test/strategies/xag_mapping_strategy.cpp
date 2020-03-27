@@ -496,3 +496,80 @@ TEST_CASE("pebble simple xag 11", "[XAG synthesis-11]")
 
 }
 #endif
+
+TEST_CASE("min depth synthesis XAG", "[mindepth]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+
+  xag_network xag;
+
+  auto x1 = xag.create_pi();
+  auto x2 = xag.create_pi();
+  auto x3 = xag.create_pi();
+  auto x4 = xag.create_pi();
+  auto x5 = xag.create_pi();
+  auto x6 = xag.create_pi();
+
+  auto n1 = xag.create_xor(x1, x2);
+  auto n2 = xag.create_xor(x3, x4);
+  auto n3 = xag.create_and(n1, n2);
+  auto n4 = xag.create_xor(x4, x5);
+  auto n5 = xag.create_and(n4, x6);
+  auto n6 = xag.create_and(n3, n5);
+
+  xag.create_po(n6);
+
+  xag_low_depth_mapping_strategy strategy;
+  netlist<stg_gate> rev;
+
+  logic_network_synthesis_stats st;
+  logic_network_synthesis_params ps;
+  ps.verbose = false;
+
+  logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
+  auto tt_xag = simulate<kitty::static_truth_table<6>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<6>>( *ntk );
+
+  CHECK(tt_xag == tt_ntk);
+}
+
+
+TEST_CASE("min depth synthesis XAG-2", "[mindepth2]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+
+  xag_network xag;
+
+  auto x1 = xag.create_pi();
+  auto x2 = xag.create_pi();
+  auto x3 = xag.create_pi();
+
+
+  auto n1 = xag.create_and(x1, x2);
+  auto n2 = xag.create_and(x2, x3);
+  auto n3 = xag.create_and(!x1, x2);
+  auto n4 = xag.create_xor(n1, n2);
+  auto n5 = xag.create_xor(n4, n3);
+
+  xag.create_po(n5);
+
+  xag_low_depth_mapping_strategy strategy;
+  netlist<stg_gate> rev;
+
+  logic_network_synthesis_stats st;
+  logic_network_synthesis_params ps;
+  ps.verbose = false;
+
+  logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
+  auto tt_xag = simulate<kitty::static_truth_table<3>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<3>>( *ntk );
+
+  CHECK(tt_xag == tt_ntk);
+}
+

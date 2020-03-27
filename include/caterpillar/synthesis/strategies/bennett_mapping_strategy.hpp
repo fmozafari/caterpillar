@@ -130,7 +130,7 @@ public:
           {
             it = this->steps().insert( it, {n, compute_inplace_action{
                                                    static_cast<uint32_t>(
-                                                       target ), std::nullopt}} );
+                                                       target ), std::nullopt, std::nullopt}} );
             ++it;
             it = this->steps().insert( it, {n, uncompute_inplace_action{
                                                    static_cast<uint32_t>(
@@ -144,7 +144,7 @@ public:
           {
             it = this->steps().insert( it, {n, compute_inplace_action{
                                                    static_cast<uint32_t>(
-                                                       target ), std::nullopt}} );
+                                                       target ), std::nullopt, std::nullopt}} );
             ++it;
             it = this->steps().insert( it, {n, uncompute_inplace_action{
                                                    static_cast<uint32_t>(
