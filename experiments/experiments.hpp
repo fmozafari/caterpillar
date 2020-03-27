@@ -401,14 +401,19 @@ inline std::pair<int, int> xag_stats(mockturtle::xag_network const& ntk)
 /* returns the number of AND levels and the maximum number of AND in one level */
 inline std::pair<uint32_t, uint32_t> and_depth(mockturtle::xag_network const& ntk)
 {
+  mockturtle::depth_view xag (ntk);
+
+  if(xag.m_depth() == 0) 
+    return {0, 0};
+
   auto and_depth = 0u;
   auto max_and_count = 0u;
-  mockturtle::depth_view xag (ntk);
-  std::vector<std::vector<uint32_t>> levels (xag.depth());
+
+  std::vector<std::vector<uint32_t>> levels (xag.m_depth());
 
   xag.foreach_node( [&]( auto n ) {
     if( xag.is_and(n) ) 
-      levels[xag.level(n)-1].push_back(n); 
+      levels[xag.m_level(n)-1].push_back(n); 
   });
 
   for(auto& l : levels)

@@ -406,7 +406,6 @@ public:
     mockturtle::topo_view xag_t {ntk};
     mockturtle::depth_view xag {xag_t};
 
-    std::cout << "update fi\n";
     std::vector<std::vector<uint32_t>> fi (xag.size());
 
     std::vector<node_t> drivers;
@@ -417,7 +416,9 @@ public:
     xag.foreach_node( [&]( auto n ) {
       update_fi( n, xag, fi, drivers );
 
-      if( xag.is_and(n) || std::find( drivers.begin(), drivers.end(), n ) != drivers.end() ) 
+      if( xag.is_and(n) ) 
+        levels[xag.m_level(n)-1].push_back(n);
+      else if( std::find( drivers.begin(), drivers.end(), n ) != drivers.end() ) 
         levels[xag.level(n)-1].push_back(n);
       
     });
@@ -426,14 +427,12 @@ public:
 
     for(auto lvl : levels){ if(lvl.size() != 0)
     {
-      std::cout << "new level\n";
 
       std::map< node_t, std::pair<std::vector<action_sets>, std::vector<uint32_t>> > node_and_action;
       
       std::vector<uint32_t> used;
       std::vector<uint32_t> to_be_copied;
 
-      std::cout << "get copies\n";
       for(auto n : lvl)
       {
         auto cones = get_cones(n, xag, fi);
@@ -456,7 +455,6 @@ public:
         else //xor outputs do not need to use copies
           node_and_action[n] = {cones, {}};
       }
-      std::cout << "insert copies\n";
 
       for(auto l : to_be_copied)
       {
@@ -465,10 +463,6 @@ public:
       }
       for (auto n : lvl)
       {
-        //insert 
-        std::cout << "generate steps node " << n << "\n";
-        fmt::print("{}", fmt::join(node_and_action[n].second, ","));
-        std::cout << "\n";
 
         auto cc = gen_steps(n, node_and_action[n].first, true, node_and_action[n].second);
 
@@ -481,12 +475,10 @@ public:
           auto uc = gen_steps( n , node_and_action[n].first, false);
           it = steps().insert( it, uc.begin(), uc.end() );
         }
-
         
       }
     }
     }
-    std::cout << "computed strategy\n";
     return true;
   }
 };
