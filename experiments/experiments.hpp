@@ -380,58 +380,35 @@ bool check_equivalence(Ntk const& ntk, tweedledum::netlist<caterpillar::stg_gate
   return (tt_ntk == tt_rev);
 }
 
-inline std::pair<int, int> xag_stats(mockturtle::xag_network const& ntk)
+struct xag_stats
 {
-  auto n_and = 0;
-  auto n_xor = 0;
-  ntk.foreach_gate([&] (auto const& node)
+  uint32_t n_and = 0;
+  uint32_t n_xor = 0;
+  uint32_t mult_depth = 0;
+  uint32_t mult_width = 0;
+
+  xag_stats(mockturtle::xag_network const& ntk)
   {
-    if(ntk.is_and(node))
-    {
-      n_and++;
-    }
-    else if(ntk.is_xor(node))
-    {
-      n_xor++;
-    }
-  });
-  return {n_and, n_xor};
-}
+    mockturtle::depth_view xag (ntk);
+    std::vector<uint32_t> lvls (xag.m_depth());
 
-/* returns the number of AND levels and the maximum number of AND in one level */
-inline std::pair<uint32_t, uint32_t> and_depth(mockturtle::xag_network const& ntk)
-{
-  mockturtle::depth_view xag (ntk);
+    xag.foreach_node( [&]( auto n ) {
+      if( xag.is_and(n) ) 
+      {
+        lvls[xag.m_level(n)-1]++; 
+        n_and++;
+      }
+      else if(ntk.is_xor(n))
+      {
+        n_xor++;
+      }
+    });
 
-  if(xag.m_depth() == 0) 
-    return {0, 0};
-
-  auto and_depth = 0u;
-  auto max_and_count = 0u;
-
-  std::vector<std::vector<uint32_t>> levels (xag.m_depth());
-
-  xag.foreach_node( [&]( auto n ) {
-    if( xag.is_and(n) ) 
-      levels[xag.m_level(n)-1].push_back(n); 
-  });
-
-  for(auto& l : levels)
-  {
-    fmt::print("{}", fmt::join(l, " "));
-    std::cout << "\n";
-    auto count = l.size();
-    if(count!=0)
-    {
-      and_depth++;
-      if (count > max_and_count)
-        max_and_count = count;
-    }
-    
+    mult_depth = xag.m_depth();
+    mult_width = mult_depth == 0 ? 0 : lvls[std::max_element(lvls.begin(), lvls.end()) - lvls.begin()];
   }
 
-  return {and_depth, max_and_count};
-}
+};
 
 /* finds T-count, T-depth and #CNOT for {X, CNOT, CCNOT} circuits where all CCNOT are computed on a clean helper line */
 inline std::tuple<int, int, int> qc_stats(tweedledum::netlist<caterpillar::stg_gate> const& ntk, bool use_tdepth1 = false)
@@ -468,6 +445,7 @@ inline std::tuple<int, int, int> qc_stats(tweedledum::netlist<caterpillar::stg_g
         {
           depths[c] = depths[c] + 1;
         });
+        
         Tcount = Tcount + 4;
       }
       mask[t] = !(mask[t]);
