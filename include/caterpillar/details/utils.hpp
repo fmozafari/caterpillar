@@ -3,11 +3,23 @@
 | See accompanying file /LICENSE for details.
 | Author(s): Giulia Meuli
 *------------------------------------------------------------------------------------------------*/
-#include <tweedledum/tweedledum.hpp>
+#include <tweedledum/gates/gate_set.hpp>
+#include <mockturtle/networks/klut.hpp>
+#include <caterpillar/structures/abstract_network.hpp>
+
 #pragma once
 
 namespace caterpillar::detail
 {
+  template<class Ntk>
+  uint32_t resp_num_pis(Ntk const& net)
+	{
+		if constexpr (std::is_same_v<Ntk, mockturtle::klut_network> || std::is_same_v<Ntk, abstract_network>)
+			return net.num_pis() + 2;
+		else 
+			return net.num_pis() + 1;
+	}
+
   template<class QuantumCircuit>
   inline int t_cost( QuantumCircuit const& netlist)
   {

@@ -11,6 +11,7 @@
 #pragma once
 
 #include <mockturtle/views/immutable_view.hpp>
+#include <caterpillar/details/utils.hpp>
 
 #include <iostream>
 namespace caterpillar
@@ -68,21 +69,19 @@ public:
     static_assert( mockturtle::has_foreach_node_v<Ntk>, "Ntk does not implement the foreach_node method" );
     static_assert( mockturtle::has_foreach_fanin_v<Ntk>, "Ntk does not implement the foreach_fanin method" );
 
-
     _weights.resize(this ->num_gates(), 1);
-
     compute_parents();
 
   }
 
   uint32_t get_weight (const node n) const
   {
-    return _weights[this->node_to_index( n - this->num_pis() - 1 )];
+    return _weights[this->node_to_index( n - detail::resp_num_pis(*this) )];
   }
 
   void set_weight (const node n, uint32_t w)
   {
-    _weights[this->node_to_index( n - this->num_pis() - 1 )] = w;
+    _weights[this->node_to_index( n - detail::resp_num_pis(*this) )] = w;
   }
 
   std::vector<node> get_parents( node const& n) const

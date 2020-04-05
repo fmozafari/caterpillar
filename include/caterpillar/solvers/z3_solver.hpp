@@ -17,7 +17,7 @@
 #include <type_traits>
 
 #include <mockturtle/networks/klut.hpp>
-
+#include <caterpillar/details/utils.hpp>
 
 namespace caterpillar
 {
@@ -39,13 +39,6 @@ class z3_pebble_solver
     expr_vector a;
 	};
 
-	uint32_t resp_num_pis()
-	{
-		if constexpr (std::is_same_v<Ntk, mockturtle::klut_network> || std::is_same_v<Ntk, abstract_network>)
-			return _net.num_pis() + 2;
-		else 
-			return _net.num_pis() + 1;
-	}
 
 public:
 
@@ -71,12 +64,12 @@ public:
 
 	uint32_t node_to_var( node n )
 	{
-		return n - resp_num_pis();
+		return n - detail::resp_num_pis(_net);
 	}
 
 	node var_to_node(uint32_t var)
 	{
-		return var + resp_num_pis();
+		return var + detail::resp_num_pis(_net);
 	}
 
 	expr_vector new_variable_set(std::string s)
@@ -124,7 +117,7 @@ public:
 		{
 			_net.foreach_fanin( var_to_node( var ), [&]( auto sig ) {
 				auto ch_node = _net.get_node( sig );
-				if ( ch_node >= resp_num_pis() )
+				if ( ch_node >= detail::resp_num_pis(_net) )
 				{
 					slv.add( implies( current.s[var] != next.s[var], ( current.s[node_to_var( ch_node )] && next.s[node_to_var( ch_node )] ) ) );
 				}

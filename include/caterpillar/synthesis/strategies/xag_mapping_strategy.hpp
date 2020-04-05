@@ -300,7 +300,7 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
     return xag_steps;
   }
 
-  abstract_network build_box_network(mockturtle::xag_network const& xag)
+  abstract_network build_box_network(mockturtle::xag_network const& xag, bool use_w = false)
   {
     abstract_network box_ntk;
 
@@ -334,9 +334,15 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
           }
         }
         
-        auto box_node_s = box_ntk.create_node(box_ins);
+        
+        auto box_node_s = use_w ? box_ntk.create_node(box_ins, box_ins.size() - 2) : box_ntk.create_node(box_ins);
+
+        auto box_node = box_ntk.get_node(box_node_s);
+
         xag_to_box[node] = box_node_s;
-        box_to_action[box_ntk.get_node(box_node_s)] = {node, cones};
+
+        box_to_action[box_node] = {node, cones};
+       
         
         if(std::find(drivers.begin(), drivers.end(), node) != drivers.end())
         {
@@ -364,7 +370,7 @@ public:
     
 
     if(ps.progress) std::cout << "[i]  Generate box network... \n";
-    abstract_network box_ntk = build_box_network(xag);
+    auto box_ntk = build_box_network(xag, ps.max_weight != 0);
 
     store_steps = pebble<solver_t, abstract_network> (box_ntk, ps);
 
