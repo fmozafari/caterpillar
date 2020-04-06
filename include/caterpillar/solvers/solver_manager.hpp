@@ -3,6 +3,8 @@
 #include <chrono>
 #include <mockturtle/utils/progress_bar.hpp>
 #include <caterpillar/synthesis/strategies/action.hpp>
+#include <caterpillar/solvers/z3_solver.hpp>
+#include <type_traits>
 
 using namespace std::chrono;
 
@@ -13,6 +15,9 @@ struct pebbling_mapping_strategy_params
 {
   /*! \brief Show progress bar. */
   bool progress{false};
+
+  /*! \brief Print solution. */
+  bool verbose{false};
 
   /*! \brief Maximum number of pebbles to use, if supported by mapping strategy (0 means no limit). */
   uint32_t pebble_limit{0u};
@@ -86,6 +91,11 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
     }
     else if ( result == solver.sat() )
     {
+      // todo, add print to all solvers.
+      if constexpr (std::is_same_v<Solver, z3_pebble_solver<Ntk>>)
+      {  
+        if(ps.verbose) solver.print();
+      }
       steps = solver.extract_result();
       if ( ps.decrement_on_success && limit > 1)
       {

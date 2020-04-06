@@ -335,8 +335,7 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
         }
         
         
-        auto box_node_s = use_w ? box_ntk.create_node(box_ins, box_ins.size() - 2) : box_ntk.create_node(box_ins);
-
+        auto box_node_s = use_w ? box_ntk.create_node(box_ins, (int)box_ins.size()/2) : box_ntk.create_node(box_ins);
         auto box_node = box_ntk.get_node(box_node_s);
 
         xag_to_box[node] = box_node_s;
