@@ -91,11 +91,13 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
     }
     else if ( result == solver.sat() )
     {
-      // todo, add print to all solvers.
+      #ifdef USE_Z3
       if constexpr (std::is_same_v<Solver, z3_pebble_solver<Ntk>>)
       {  
         if(ps.verbose) solver.print();
       }
+      #endif
+
       steps = solver.extract_result();
       if ( ps.decrement_on_success && limit > 1)
       {

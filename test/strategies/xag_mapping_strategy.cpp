@@ -495,6 +495,53 @@ TEST_CASE("pebble simple xag 11", "[XAG synthesis-11]")
   CHECK(tt_xag == tt_ntk);
 
 }
+
+TEST_CASE("pebbling XAG with weights", "[minweight]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+
+  xag_network xag;
+
+  auto x1 = xag.create_pi();
+  auto x2 = xag.create_pi();
+  auto x3 = xag.create_pi();
+  auto x4 = xag.create_pi();
+  auto x5 = xag.create_pi();
+  auto x6 = xag.create_pi();
+
+
+  auto n1 = xag.create_xor(x1, x2);
+  auto n2 = xag.create_and(x2, n1);
+  auto n3 = xag.create_and(x2, n2);
+  auto n4 = xag.create_xor(x3, x4);
+  auto n5 = xag.create_xor(x5, x6);
+  auto n6 = xag.create_and(n4, n5);
+  auto n7 = xag.create_xor(n6, n4);
+  auto n8 = xag.create_and(x3, n7);
+  auto n9 = xag.create_and(n8, n3);
+
+  xag.create_po(n9);
+
+  pebbling_mapping_strategy_params pss;
+  pss.pebble_limit = 4;
+  pss.max_weight = 16;
+  pss.verbose = true;
+  xag_pebbling_mapping_strategy strategy (pss);
+  netlist<stg_gate> rev;
+
+  logic_network_synthesis_stats st;
+  logic_network_synthesis_params ps;
+  ps.verbose = false;
+
+  logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
+  auto tt_xag = simulate<kitty::static_truth_table<6>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<6>>( *ntk );
+
+  CHECK(tt_xag == tt_ntk);
+}
 #endif
 
 TEST_CASE("min depth synthesis XAG", "[mindepth]")
@@ -573,51 +620,6 @@ TEST_CASE("min depth synthesis XAG-2", "[mindepth2]")
   CHECK(tt_xag == tt_ntk);
 }
 
-TEST_CASE("pebbling XAG with weights", "[minweight]")
-{
-  using namespace caterpillar;
-  using namespace mockturtle;
-  using namespace tweedledum;
 
-  xag_network xag;
-
-  auto x1 = xag.create_pi();
-  auto x2 = xag.create_pi();
-  auto x3 = xag.create_pi();
-  auto x4 = xag.create_pi();
-  auto x5 = xag.create_pi();
-  auto x6 = xag.create_pi();
-
-
-  auto n1 = xag.create_xor(x1, x2);
-  auto n2 = xag.create_and(x2, n1);
-  auto n3 = xag.create_and(x2, n2);
-  auto n4 = xag.create_xor(x3, x4);
-  auto n5 = xag.create_xor(x5, x6);
-  auto n6 = xag.create_and(n4, n5);
-  auto n7 = xag.create_xor(n6, n4);
-  auto n8 = xag.create_and(x3, n7);
-  auto n9 = xag.create_and(n8, n3);
-
-  xag.create_po(n9);
-
-  pebbling_mapping_strategy_params pss;
-  pss.pebble_limit = 4;
-  pss.max_weight = 16;
-  pss.verbose = true;
-  xag_pebbling_mapping_strategy strategy (pss);
-  netlist<stg_gate> rev;
-
-  logic_network_synthesis_stats st;
-  logic_network_synthesis_params ps;
-  ps.verbose = false;
-
-  logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
-  auto tt_xag = simulate<kitty::static_truth_table<6>>( xag );
-  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
-  auto tt_ntk = simulate<kitty::static_truth_table<6>>( *ntk );
-
-  CHECK(tt_xag == tt_ntk);
-}
 
 
