@@ -98,7 +98,7 @@ inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network
   // if one fanin is AND or PI or PO symply delete f
   if ( (cones[0].leaves.size() == 1) != (cones[1].leaves.size() == 1) )
   {
-    if ( xag.is_xor( cones[1].node ) )
+    if ( (cones[0].leaves.size() == 1) )
       std::reverse(cones.begin(), cones.end());
 
     cones[0].target = cones[0].leaves;
@@ -260,7 +260,7 @@ public:
         {
           auto xc = gen_steps( node, cones, true);
           it = steps().insert( it, xc.begin(), xc.end() );
-
+          it = it + xc.size();
         }
       }
 

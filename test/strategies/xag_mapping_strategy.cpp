@@ -243,7 +243,57 @@ TEST_CASE("synthesize simple xag 6", "[XAG synthesis-6]")
 
 }
 
-TEST_CASE("synthesize simple xag with reconvergence", "[XAG synthesis-7]")
+TEST_CASE("synthesize simple xag with codependent xor outputs", "[XAG synthesis-7]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+  auto xag = xag_network();
+
+  auto x0 = xag.create_pi();
+  auto x1 = xag.create_pi();
+  auto x2 = xag.create_pi();
+  auto x3 = xag.create_pi();
+  auto x4 = xag.create_pi();
+  auto x5 = xag.create_pi();
+  auto x6 = xag.create_pi();
+  auto x7 = xag.create_pi();
+  auto x8 = xag.create_pi();
+
+  auto z0 = xag.create_xor(x1 , x2 );
+  auto z1 = xag.create_xor(x3 , x4 );
+  auto z2 = xag.create_xor(z0 , z1 );
+  auto z3 = xag.create_xor(x0 , z2 );
+  auto z4 = xag.create_xor(x6 , z1 );
+  auto z5 = xag.create_xor(x5 , z4 );
+  auto z6 = xag.create_xor(z5 , z3 );
+  auto z7 = xag.create_xor(x7 , x1 );
+  auto z8 = xag.create_xor(x8 , x3 );
+  auto z9 = xag.create_xor(z7 , z8 );
+  auto z10 = xag.create_xor(z9 , z3 );
+  
+  xag.create_po(z3);
+  xag.create_po(!z6);
+  xag.create_po(z10);
+
+  netlist<stg_gate> qnet;
+
+  logic_network_synthesis_params ps;
+  logic_network_synthesis_stats st;
+  ps.verbose = false;
+
+  xag_mapping_strategy strategy;
+  logic_network_synthesis( qnet, xag, strategy, {}, ps, &st );
+
+  auto tt_xag = simulate<kitty::static_truth_table<9>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<9>>( *ntk );
+
+  CHECK(tt_xag == tt_ntk);
+
+}
+
+TEST_CASE("synthesize simple xag with reconvergence", "[XAG synthesis-8]")
 {
   using namespace caterpillar;
   using namespace mockturtle;
@@ -282,7 +332,7 @@ TEST_CASE("synthesize simple xag with reconvergence", "[XAG synthesis-7]")
 
 }
 
-TEST_CASE("synthesize simple xag 8", "[XAG synthesis-8]")
+TEST_CASE("synthesize simple xag 8", "[XAG synthesis-9]")
 {
   using namespace caterpillar;
   using namespace mockturtle;
@@ -322,7 +372,7 @@ TEST_CASE("synthesize simple xag 8", "[XAG synthesis-8]")
 
 }
 
-TEST_CASE("synthesize simple xag 9", "[XAG synthesis-9]")
+TEST_CASE("synthesize simple xag 9", "[XAG synthesis-10]")
 {
   using namespace caterpillar;
   using namespace mockturtle;
