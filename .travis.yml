@@ -44,13 +44,6 @@ matrix:
           - g++-7
     env: COMPILER=clang++-6.0
   - os: osx
-    osx_image: xcode10.3
-    compiler: clang
-    before_install:
-      - brew update
-      - brew install llvm@9
-    env: COMPILER=/usr/local/opt/llvm/bin/clang++
-  - os: osx
     osx_image: xcode11.4
     compiler: clang
     before_install:

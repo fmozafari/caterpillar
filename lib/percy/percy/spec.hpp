@@ -4,7 +4,7 @@
 #include <vector>
 #include "tt_utils.hpp"
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-pedantic"
+#pragma GCC diagnostic ignored "-Wpedantic"
 #include <kitty/kitty.hpp>
 #include <kitty/print.hpp>
 #pragma GCC diagnostic pop
@@ -89,6 +89,8 @@ namespace percy
         int64_t sat_time = 0;   ///< How much time was spent on UNSAT formulae (in us)
         int64_t unsat_time = 0; ///< How much time was spent on SAT formulae (in us)
         int64_t synth_time = 0; ///< How much time was spent on SAT formulae (in us)
+        int nr_vars = 0;
+        int nr_clauses = 0;
     }; 
 
     class spec
@@ -113,7 +115,6 @@ namespace percy
             uint64_t triv_flag; ///< Is 1 at index i if output i is constant zero or one or a projection.
             int nr_triv; ///< Number of trivial output functions
             int nr_nontriv; ///< Number of non-trivial output functions
-            int nr_rand_tt_assigns; ///< Number of truth table bits to assign randomly in CEGAR loop
 
             bool add_nontriv_clauses = true; ///< Symmetry break: do not allow trivial operators
             bool add_alonce_clauses = true; ///< Symmetry break: all steps must be used at least once
@@ -302,7 +303,6 @@ namespace percy
 
             const kitty::dynamic_truth_table& get_dc_mask(std::size_t f_idx) const
             {
-                assert(f_idx < capacity);
                 return dc_masks[f_idx];
             }
 

@@ -1,5 +1,5 @@
 /* mockturtle: C++ logic network library
- * Copyright (C) 2018  EPFL
+ * Copyright (C) 2018-2019  EPFL
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -51,9 +51,9 @@
 namespace mockturtle
 {
 
-/* cube operators needed from Kitty :  
+/* cube operators needed from Kitty :
 - & (bitwise and )
-- is_subset_of 
+- is_subset_of
 - is_const0
 */
 
@@ -836,7 +836,7 @@ Ntk akers_synthesis( kitty::dynamic_truth_table const& func, kitty::dynamic_trut
   Ntk ntk;
   std::vector<signal<Ntk>> pis;
 
-  for ( auto i = 0; i < func.num_vars(); ++i )
+  for ( auto i = 0u; i < func.num_vars(); ++i )
   {
     pis.push_back( ntk.create_pi() );
   }

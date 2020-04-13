@@ -51,6 +51,8 @@
 #include <mockturtle/algorithms/simulation.hpp>
 #include <mockturtle/networks/xag.hpp>
 #include <kitty/dynamic_truth_table.hpp>
+#include <mockturtle/algorithms/equivalence_checking.hpp>
+#include <mockturtle/algorithms/miter.hpp>
 
 namespace experiments
 {
@@ -367,17 +369,35 @@ private:
 };
 
 template <typename Ntk>
-bool check_equivalence(Ntk const& ntk, tweedledum::netlist<caterpillar::stg_gate> const& rev, std::vector<uint32_t> const pi_lines, std::vector<uint32_t> const po_lines)
+bool check_equivalence_tt(Ntk const& ntk, tweedledum::netlist<caterpillar::stg_gate> const& rev, std::vector<uint32_t> const pi_lines, std::vector<uint32_t> const po_lines)
 {
   auto n_pis = ntk.num_pis();
   assert (n_pis == pi_lines.size());
 
-  auto tt_ntk = mockturtle::simulate<kitty::dynamic_truth_table>( ntk, {n_pis} );
-    
   const auto ntk_rev = caterpillar::circuit_to_logic_network<Ntk, tweedledum::netlist<caterpillar::stg_gate>>( rev, pi_lines, po_lines );
+  auto tt_ntk = mockturtle::simulate<kitty::dynamic_truth_table>( ntk, {n_pis} );
   auto tt_rev = mockturtle::simulate<kitty::dynamic_truth_table>( *ntk_rev, {n_pis} );
  
   return (tt_ntk == tt_rev);
+}
+
+template <typename Ntk>
+std::optional<bool> check_equivalence_ntk(Ntk const& ntk, tweedledum::netlist<caterpillar::stg_gate> const& rev, std::vector<uint32_t> const pi_lines, std::vector<uint32_t> const po_lines)
+{
+  auto n_pis = ntk.num_pis();
+  assert (n_pis == pi_lines.size());
+  
+  const auto ntk_rev = caterpillar::circuit_to_logic_network<Ntk, tweedledum::netlist<caterpillar::stg_gate>>( rev, pi_lines, po_lines );
+  mockturtle::equivalence_checking_params ps;
+  ps.verbose = true;
+  if(auto mit = mockturtle::miter<Ntk>(ntk, *ntk_rev))
+  {
+    return mockturtle::equivalence_checking(*mit, ps);
+  }
+  else 
+  {
+    return std::nullopt;
+  }
 }
 
 struct xag_stats
