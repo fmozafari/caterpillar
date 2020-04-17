@@ -192,7 +192,7 @@ private:
       mapped_ntk.foreach_cell_fanin( n, [&]( auto c ) {
         leaves.push_back( c );
       } );
-      mt::cut_view<LogicNetwork> cut{_ntk, leaves, n};//_ntk.make_signal()//does not change the graph
+      mt::cut_view cut{_ntk, leaves, _ntk.make_signal(n)};
       mt::mapping_view<decltype( cut ), true> mapped_cut{cut};
       mt::lut_mapping_params lm_ps;
       uint32_t best_cut_size = leaves.size();

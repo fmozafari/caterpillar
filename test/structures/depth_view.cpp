@@ -124,7 +124,9 @@ TEST_CASE( "compute multiplicative depth information for xags", "[depth_view]")
 
   xag.create_po( n8 );
 
-  depth_view depth_xag{xag};
+  depth_view_params ps;
+  ps.compute_m_critical_path = true;
+  depth_view depth_xag{xag, ps};
 
   CHECK( depth_xag.m_depth() == 3 );
   CHECK( depth_xag.depth() == 4 );
@@ -163,7 +165,9 @@ TEST_CASE( "compute multiplicative depth information for xags 2", "[depth_view]"
 
   xag.create_po( n6 );
 
-  depth_view depth_xag{xag};
+  depth_view_params ps;
+  ps.compute_m_critical_path = true;
+  depth_view depth_xag{xag, ps};
 
   CHECK( depth_xag.m_depth() == 2 );
   CHECK( depth_xag.depth() == 2 );

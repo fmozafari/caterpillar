@@ -50,6 +50,7 @@ struct depth_view_params
   bool count_complements{false};
 
   bool compute_m_critical_path{false};
+
 };
 
 /*! \brief Implements `depth` and `level` methods for networks.
@@ -186,6 +187,10 @@ public:
   void update_m_levels()
   {
     _m_levels.reset( 0 );
+
+    _m_crit_path.reset( false );
+
+    this->incr_trav_id();
 
     compute_m_levels();
   }
@@ -340,6 +345,7 @@ private:
         compute_m_critical_path( this -> get_node(f), _m_depth );
       });
     }
+
   }
 
   node_map<uint32_t, Ntk> _m_levels;

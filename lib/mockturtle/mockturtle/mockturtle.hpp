@@ -76,6 +76,7 @@
 #include "mockturtle/algorithms/node_resynthesis/dsd.hpp"
 #include "mockturtle/algorithms/node_resynthesis/xmg_npn.hpp"
 #include "mockturtle/algorithms/node_resynthesis/xag_npn.hpp"
+#include "mockturtle/algorithms/node_resynthesis/xag_minmc.hpp"
 #include "mockturtle/algorithms/node_resynthesis/direct.hpp"
 #include "mockturtle/algorithms/akers_synthesis.hpp"
 #include "mockturtle/algorithms/gates_to_nodes.hpp"
