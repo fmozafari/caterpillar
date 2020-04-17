@@ -670,6 +670,48 @@ TEST_CASE("min depth synthesis XAG-2", "[mindepth2]")
   CHECK(tt_xag == tt_ntk);
 }
 
+TEST_CASE("min depth synthesis XAG no copies", "[mindepth3]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+
+  xag_network xag;
+  auto x1 = xag.create_pi();
+  auto x2 = xag.create_pi();
+  auto x3 = xag.create_pi();
+  auto x4 = xag.create_pi();
+  auto x5 = xag.create_pi();
+
+
+  auto n1 = xag.create_xor(x1, x2);
+  auto n2 = xag.create_and(n1, x3);
+  auto n3 = xag.create_and(x3, x4);
+  auto n4 = xag.create_and(x4, x5);
+  auto n5 = xag.create_and( n2, n3);
+
+  xag.create_po(n5);
+  xag.create_po(n4);
+  xag.create_po(n1);
+
+
+  xag_depth_fit_mapping_strategy strategy;
+  netlist<stg_gate> rev;
+
+  logic_network_synthesis_stats st;
+  logic_network_synthesis_params ps;
+  ps.verbose = false;
+
+  logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
+  auto tt_xag = simulate<kitty::static_truth_table<5>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<5>>( *ntk );
+
+  CHECK(tt_xag == tt_ntk);
+}
+
+
+
 
 
 

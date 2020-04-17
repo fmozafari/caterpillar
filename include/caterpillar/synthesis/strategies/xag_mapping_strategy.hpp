@@ -5,7 +5,7 @@
 *------------------------------------------------------------------------------------------------*/
 
 #pragma once
-
+#include <boost/dynamic_bitset.hpp>
 #include "mapping_strategy.hpp"
 #include <caterpillar/solvers/solver_manager.hpp>
 #include <caterpillar/structures/stg_gate.hpp>
@@ -17,8 +17,13 @@
 #include <mockturtle/views/topo_view.hpp>
 #include <mockturtle/views/depth_view.hpp>
 #include <tweedledum/networks/netlist.hpp>
+#include <caterpillar/details/bron_kerbosch.hpp>
+#include <caterpillar/details/bron_kerbosch_utils.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <fmt/format.h>
+using namespace std::chrono;
 
 
 namespace caterpillar
@@ -82,7 +87,17 @@ inline void update_fi( node_t node, mockturtle::xag_network const& xag, std::vec
   }
 }
 
-inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>>& fi )
+
+static inline  std::vector<std::vector<uint32_t>> get_fi (mockturtle::xag_network const& xag, std::vector<node_t> const& drivers )
+{
+  std::vector<std::vector<uint32_t>> fi (xag.size());
+  xag.foreach_node( [&]( auto n ) {
+    update_fi(n, xag, fi, drivers);
+  });
+  return fi;
+}
+
+inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
 {
   std::vector<action_sets> cones; 
 
@@ -92,7 +107,6 @@ inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network
     auto set = action_sets(fanin, fi[xag.node_to_index( fanin )] ) ; 
     cones.push_back( set ); 
   } );
-
   assert( cones.size() == 2 );
 
   // if one fanin is AND or PI or PO symply delete f
@@ -140,7 +154,7 @@ inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network
   return cones;
 }
 
-inline steps_xag_t gen_steps( node_t node, std::vector<action_sets>& cones, bool compute, std::vector<uint32_t> const& cps = {})
+static inline steps_xag_t gen_steps( node_t node, std::vector<action_sets>& cones, bool compute, std::vector<uint32_t> const& cps = {})
 {
   steps_xag_t comp_steps;
 
@@ -207,13 +221,31 @@ inline steps_xag_t gen_steps( node_t node, std::vector<action_sets>& cones, bool
   return comp_steps;
 }
 
+template<class Ntk>
+static inline std::vector<std::vector<node_t>> get_levels( Ntk const& xag, std::vector<node_t> const& drivers)
+{
+  static_assert(mockturtle::has_depth_v<Ntk>, "Ntk does not implement the member depth");
+
+  std::vector<std::vector<node_t>>levels (xag.depth());
+                                                                 
+  xag.foreach_node( [&]( auto n ) {
+    if( xag.is_and(n) ) 
+      levels[xag.m_level(n)-1].push_back(n);
+    else if( std::find( drivers.begin(), drivers.end(), n ) != drivers.end() ) 
+      levels[xag.level(n)-1].push_back(n);
+  });
+
+  return levels;
+}
+
+
 /*!
   \verbatim embed:rst
     This strategy is dedicated to XAG graphs and fault tolerant quantum computing.
     It exploits two main facts:
 
     1.  XORs are relatively cheap to be implemented in fault tolerant quantum computing
-    2.  Toffoli gates used to implement AND nodes can be uncomputed using 0 T gates
+    2.  Toffoli gates visited to implement AND nodes can be uncomputed using 0 T gates
 
     Details can be found in :cite:`MSC19`.
   \endverbatim
@@ -225,19 +257,13 @@ public:
   bool compute_steps( mockturtle::xag_network const& ntk ) override
   {
     mockturtle::topo_view xag {ntk};
-    std::vector<std::vector<uint32_t>> fi (xag.size());
 
-    std::vector<node_t> drivers;
-    xag.foreach_po( [&]( auto const& f ) { drivers.push_back( xag.get_node( f ) ); } );
-                                                                                   
-
+    auto drivers = detail::get_outputs(xag);                                                     
+    auto fi  = get_fi(xag, drivers);
     auto it = steps().begin();
-
 
     xag.foreach_node( [&]( auto node ) {
       
-      update_fi( node, xag, fi, drivers );
-
       if ( xag.is_and( node ) || std::find( drivers.begin(), drivers.end(), node ) != drivers.end() )
       {
         auto cones = get_cones(  node, xag, fi );
@@ -305,7 +331,7 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
     abstract_network box_ntk;
 
     std::unordered_map<node_t, abstract_network::signal> xag_to_box;
-    std::vector<std::vector<uint32_t>> fi (xag.size());
+    
 
 
     xag.foreach_pi([&] (auto pi)
@@ -313,13 +339,11 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
       xag_to_box[pi] = box_ntk.create_pi(); 
     });
 
-    std::vector<node_t> drivers;
-    xag.foreach_po( [&]( auto const& f ) { drivers.push_back( xag.get_node( f ) ); } );
+    auto drivers = detail::get_outputs(xag);
+    auto fi = get_fi (xag, drivers);
 
     xag.foreach_node([&] (auto node)
     {
-      update_fi( node, xag, fi, drivers );
-
       if(xag.is_and(node) || std::find(drivers.begin(), drivers.end(), node) != drivers.end())
       {
         /* collect all the input signals of the box */
@@ -390,19 +414,31 @@ public:
 /*!
   \verbatim embed:rst
     This strategy is dedicated to XAG graphs and fault tolerant quantum computing.
-    It creates an abstract graph from the XAG, each box node in the abstract graph corresponds to 
-    AND nodes and its linear transitive fanin cones.
-    Pebbling is played on the abstract graph.
+    It finds a strategy that aim to minimize the number of T-stages or T-depth.
+    Every level uses some extra-qubits to copy AND inputs.
   \endverbatim
 */
 class xag_low_depth_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
 {
   template<class T>
-  T concat (T f, T const& s)
+  T concat (T const& f, T const& s)
   {
-    f.insert(f.end(), s.begin(), s.end());
-    return f;
+    auto comp = f;
+    comp.insert(comp.end(), s.begin(), s.end());
+    return comp;
   }
+
+  steps_xag_t get_copies(std::vector<uint32_t> const& leaves_to_copy)
+  {
+    steps_xag_t copies;
+    copies.reserve(leaves_to_copy.size());
+    for(auto l : leaves_to_copy)
+    {
+      copies.push_back({l, compute_copy_action{}});
+    }
+    return copies;
+  }
+
 public: 
   
   bool compute_steps( mockturtle::xag_network const& ntk ) override
@@ -411,32 +447,19 @@ public:
     mockturtle::topo_view xag_t {ntk};
     mockturtle::depth_view xag {xag_t};
 
-    std::vector<std::vector<uint32_t>> fi (xag.size());
+    auto drivers = detail::get_outputs(xag);
+    auto fi = get_fi(xag, drivers);
 
-    std::vector<node_t> drivers;
-    xag.foreach_po( [&]( auto const& f ) { drivers.push_back( xag.get_node( f ) ); } );
-
-    std::vector<std::vector<node_t>> levels (xag.depth());
-                                                                 
-    xag.foreach_node( [&]( auto n ) {
-      update_fi( n, xag, fi, drivers );
-
-      if( xag.is_and(n) ) 
-        levels[xag.m_level(n)-1].push_back(n);
-      else if( std::find( drivers.begin(), drivers.end(), n ) != drivers.end() ) 
-        levels[xag.level(n)-1].push_back(n);
-      
-    });
+    /*each m_level is filled with AND nodes and XOR outputs */
+    auto levels = get_levels(xag, drivers);
     
     auto it = steps().begin();
 
     for(auto lvl : levels){ if(lvl.size() != 0)
     {
-
       std::map< node_t, std::pair<std::vector<action_sets>, std::vector<uint32_t>> > node_and_action;
-      
-      std::vector<uint32_t> used;
-      std::vector<uint32_t> to_be_copied;
+      std::vector<uint32_t> visited;
+      std::vector<uint32_t> all_copies;
 
       for(auto n : lvl)
       {
@@ -444,44 +467,190 @@ public:
 
         if(xag.is_and(n))
         {
-          auto tot_l = concat(cones[0].leaves, cones[1].leaves);
-          std::vector<uint32_t> cp;
-          for (auto l : tot_l)
+          std::vector<uint32_t> node_copies;
+
+          for (auto l : concat(cones[0].leaves, cones[1].leaves))
           {
-            if(std::find(used.begin(), used.end(), l ) != used.end())
+            if(std::find(visited.begin(), visited.end(), l ) != visited.end())
             {
-              to_be_copied.push_back(l);
-              cp.push_back(l);
+              node_copies.push_back(l);
             }
-            used.push_back(l);
+            visited.push_back(l);
           }
-          node_and_action[n] = {cones, cp};
+
+          node_and_action[n] = {cones, node_copies};
+          all_copies.insert(all_copies.end(), node_copies.begin(), node_copies.end());
         }
         else //xor outputs do not need to use copies
           node_and_action[n] = {cones, {}};
       }
 
-      for(auto l : to_be_copied)
-      {
-        it = steps().insert(it, {l, compute_copy_action{}} );
-        it = it + 1;
-      }
+      /* all the copy operations for the level are inserted */
+      auto copies = get_copies(all_copies);
+      it = steps().insert(it, copies.begin(), copies.end());
+      it = it + copies.size();
+      
+      /* all the node operations are inserted */
+      /* uncopies are done after computing each node */
       for (auto n : lvl)
       {
-
         auto cc = gen_steps(n, node_and_action[n].first, true, node_and_action[n].second);
 
         it = steps().insert(it, cc.begin(), cc.end());
+
         it = it + cc.size();        
 
-
+        /* non output nodes are uncomputed */
+        /* uncomputing does not need copies as it does not require T gates */
         if ( std::find( drivers.begin(), drivers.end(), n ) == drivers.end()  )
         { 
           auto uc = gen_steps( n , node_and_action[n].first, false);
           it = steps().insert( it, uc.begin(), uc.end() );
         }
-        
       }
+
+    }
+    }
+    return true;
+  }
+};
+
+
+/*!
+  \verbatim embed:rst
+    This strategy is dedicated to XAG graphs and fault tolerant quantum computing.
+    It finds a strategy that aim to minimize the number of T-stages or T-depth.
+    It performs as many AND operations in parallel as possible.
+  \endverbatim
+*/
+class xag_depth_fit_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
+{
+  std::unordered_map<node_t, std::vector<action_sets>> node_to_cones;
+
+  //checks compatibility between nodes in one level and builds the graph
+  detail::Graph <node_t> get_compatibility_graph( std::vector<node_t> const& lvl, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
+  {
+    detail::Graph<node_t> graph;
+
+    /* set the masks for all the nodes in the level */
+    std::vector<boost::dynamic_bitset<>> masks (lvl.size());
+
+    for(auto i = 0u; i < lvl.size(); i++)
+    {  
+      auto node = lvl[i];
+      graph.push_front({node});
+
+      masks[i].resize(xag.size());
+
+      auto cones = get_cones(node, xag, fi);  
+      for (auto l : cones[0].leaves)
+      {
+        assert(masks[i].size() > l);
+        masks[i].set(l);
+      }
+      for (auto l : cones[1].leaves)
+      {
+        assert(masks[i].size() > l);
+        masks[i].set(l);
+      }
+      node_to_cones[node] = cones;
+    }
+
+    /* build the graph comparing the masks */
+    for(auto i = 1; i < lvl.size(); i++)
+    {
+      for (auto j = 0; j < i; j++ )
+      {
+        auto merge = masks[i] & masks[j];
+        if ( merge.none())
+        {
+          caterpillar::detail::edge <node_t> (graph, lvl[i], lvl[j]);
+        }
+      }
+    }
+
+    return graph;
+  }
+
+public: 
+  
+  bool compute_steps( mockturtle::xag_network const& ntk ) override
+  {
+    // the strategy proceeds in topological order and level by level
+    mockturtle::topo_view xag_t {ntk};
+
+    mockturtle::depth_view xag {xag_t};
+
+    auto drivers = detail::get_outputs(xag);
+    auto fi = get_fi (xag, drivers);
+    
+    /* each m_level is filled with AND nodes and XOR outputs */
+    /* fi is propagated */
+    auto levels = get_levels(xag, drivers);                              
+
+    auto it = steps().begin();
+
+    for(auto lvl : levels){if(lvl.size() != 0)
+    {
+      auto cgraph = get_compatibility_graph( lvl, xag, fi );
+      // get the cliques
+      detail::Solution<node_t> solution;
+      detail::solve <node_t> ({ {} }, cgraph , { {} }, std::bind (detail::aggregator <node_t>, std::ref (solution), detail::_1, detail::_2, detail::_3) );
+
+      while( ! solution.empty() )
+      {
+        //decrescent order
+        solution.sort( [&]  (const detail::Graph<node_t>& first, const detail::Graph <node_t>&  second) -> bool
+        {
+          return ( first.size() > second.size() );
+        });
+
+
+        auto clique = *solution.begin();
+
+        for(auto n : clique)
+        {
+          auto node = n.id;
+
+          auto cones = node_to_cones[node];
+
+          if ( xag.is_and( node ))
+          {
+            /* compute step */
+            auto cc = gen_steps( node , cones,  true);
+            it = steps().insert( it, cc.begin(), cc.end() );
+            it = it + cc.size();
+
+            if ( std::find( drivers.begin(), drivers.end(), node ) == drivers.end()  )
+            { 
+              auto uc = gen_steps( node , cones, false);
+              it = steps().insert( it, uc.begin(), uc.end() );
+            }
+          }
+          /* node is an XOR output */
+          else 
+          {
+            auto xc = gen_steps( node, cones, true);
+            it = steps().insert( it, xc.begin(), xc.end() );
+            it = it + xc.size();
+          }
+        }
+          
+        //remove clique from solution
+        solution.remove(clique);
+
+        for (auto v : clique)
+        {
+          for (auto& g : solution)
+          {
+            if (std::find(g.begin(), g.end(), v) != g.end()) 
+            {
+              g.remove(v);
+            }     
+          }
+        }
+      }
+
     }
     }
     return true;

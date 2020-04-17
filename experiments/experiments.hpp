@@ -391,7 +391,7 @@ std::optional<bool> check_equivalence_ntk(Ntk const& ntk, tweedledum::netlist<ca
   mockturtle::equivalence_checking_params ps;
   ps.verbose = true;
   if(auto mit = mockturtle::miter<Ntk>(ntk, *ntk_rev))
-  {
+  { 
     return mockturtle::equivalence_checking(*mit, ps);
   }
   else 
@@ -424,8 +424,13 @@ struct xag_stats
       }
     });
 
-    mult_depth = xag.m_depth();
-    mult_width = mult_depth == 0 ? 0 : lvls[std::max_element(lvls.begin(), lvls.end()) - lvls.begin()];
+    mult_depth = (n_and == 0) ? 0 : xag.m_depth();
+    mult_width = (mult_depth == 0) ? 0 : lvls[std::max_element(lvls.begin(), lvls.end()) - lvls.begin()];
+  }
+
+  void print()
+  {
+    std::cout << fmt::format("AND = {}, XOR = {}, MD = {}, MW = {}\n", n_and, n_xor, mult_depth, mult_width);
   }
 
 };
