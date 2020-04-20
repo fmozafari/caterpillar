@@ -457,34 +457,77 @@ public:
 
     for(auto lvl : levels){ if(lvl.size() != 0)
     {
+      std::cout << "\nStart level ... of size " << lvl.size() << " \n";
+
       std::map< node_t, std::pair<std::vector<action_sets>, std::vector<uint32_t>> > node_and_action;
-      std::vector<uint32_t> visited;
       std::vector<uint32_t> all_copies;
+      boost::dynamic_bitset<> visited (xag.size());
+
+
+      microseconds cones_time {0};
+      microseconds conc_time {0};
+      microseconds insert_time {0};
+      microseconds store_time {0};
+      microseconds visited_time {0};
+
+
+      auto start_lvl = high_resolution_clock::now();
 
       for(auto n : lvl)
       {
+
         auto cones = get_cones(n, xag, fi);
 
         if(xag.is_and(n))
         {
           std::vector<uint32_t> node_copies;
 
-          for (auto l : concat(cones[0].leaves, cones[1].leaves))
+          /*/*/auto due = high_resolution_clock::now();
+          auto all_leaves = concat(cones[0].leaves, cones[1].leaves);
+          /*/*/conc_time = conc_time + duration_cast<microseconds>(high_resolution_clock::now() - due);
+          
+          for (auto& l : all_leaves )
           {
-            if(std::find(visited.begin(), visited.end(), l ) != visited.end())
+            /*/*/auto tre = high_resolution_clock::now(); 
+            assert( l < visited.size());
+            if( visited[l] == true)
             {
               node_copies.push_back(l);
             }
-            visited.push_back(l);
+            else
+            {
+              visited.set(l);
+            }
+            /*/*/visited_time = visited_time + duration_cast<microseconds>(high_resolution_clock::now() - tre);
           }
-
+          /*/*/auto cinque = high_resolution_clock::now();
           node_and_action[n] = {cones, node_copies};
+          /*/*/store_time = store_time + duration_cast<microseconds>(high_resolution_clock::now() - cinque);
+
+          /*/*/auto quattro = high_resolution_clock::now();
           all_copies.insert(all_copies.end(), node_copies.begin(), node_copies.end());
+          /*/*/insert_time = insert_time + duration_cast<microseconds>(high_resolution_clock::now() - quattro);
         }
-        else //xor outputs do not need to use copies
+        else //xor outputs do not need copies
+        {
+          /*/*/auto sei = high_resolution_clock::now();
           node_and_action[n] = {cones, {}};
+          /*/*/store_time = store_time + duration_cast<microseconds>(high_resolution_clock::now() - sei);
+
+        }
       }
 
+      std::cout << fmt::format("/t[t] step 1 takes: {} ms\n", duration_cast<milliseconds>(high_resolution_clock::now() - start_lvl).count());
+      //std::cout << fmt::format("/t/t[t] store takes: {} ms\n", store_time.count()/1000);
+
+      //std::cout << fmt::format("/t/t[t] get_cones takes: {} ms\n", cones_time.count()/1000);
+      //std::cout << fmt::format("/t/t[t] concat takes: {} ms\n", conc_time.count()/1000);
+      //std::cout << fmt::format("/t/t[t] check visit takes: {} ms\n", visited_time.count()/1000);
+      //std::cout << fmt::format("/t/t[t] insert takes: {} ms\n", insert_time.count()/1000);
+
+
+      
+      auto start_2 = high_resolution_clock::now();
       /* all the copy operations for the level are inserted */
       auto copies = get_copies(all_copies);
       it = steps().insert(it, copies.begin(), copies.end());
@@ -508,7 +551,9 @@ public:
           it = steps().insert( it, uc.begin(), uc.end() );
         }
       }
+      std::cout << fmt::format("/t[t] step 2 takes: {} ms\n", duration_cast<milliseconds>(high_resolution_clock::now() - start_2).count());
 
+      std::cout << fmt::format("[t] lvl takes: {} ms\n", duration_cast<milliseconds>(high_resolution_clock::now()-start_lvl).count() );
     }
     }
     return true;
@@ -535,7 +580,7 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<mockturtle::xag_n
     /* set the masks for all the nodes in the level */
     std::vector<boost::dynamic_bitset<>> masks (lvl.size());
 
-    for(auto i = 0u; i < lvl.size(); i++)
+    for(uint32_t i = 0; i < lvl.size(); i++)
     {  
       auto node = lvl[i];
       graph.push_front({node});
@@ -557,9 +602,9 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<mockturtle::xag_n
     }
 
     /* build the graph comparing the masks */
-    for(auto i = 1; i < lvl.size(); i++)
+    for(uint32_t i = 1; i < lvl.size(); i++)
     {
-      for (auto j = 0; j < i; j++ )
+      for (uint32_t j = 0; j < i; j++ )
       {
         auto merge = masks[i] & masks[j];
         if ( merge.none())

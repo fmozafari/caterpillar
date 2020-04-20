@@ -79,9 +79,9 @@ public:
   bool is_totally_symmetric( kitty::dynamic_truth_table const& function ) const
   {
     const auto num_vars = function.num_vars();
-    for ( auto i = 0; i < num_vars; ++i )
+    for ( uint32_t i = 0; i < num_vars; ++i )
     {
-      for ( auto j = i + 1; j < num_vars; ++j )
+      for ( uint32_t j = i + 1; j < num_vars; ++j )
       {
         if ( !kitty::is_symmetric_in( function, i, j ) )
         {
@@ -145,7 +145,7 @@ public:
       std::vector<tweedledum::qubit_id> controls, negations;
       auto bits = cube._bits;
       auto mask = cube._mask;
-      for ( auto v = 0; v < num_controls; ++v )
+      for ( uint32_t v = 0; v < num_controls; ++v )
       {
         if ( mask & 1 )
         {

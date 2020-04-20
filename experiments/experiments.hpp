@@ -53,6 +53,7 @@
 #include <kitty/dynamic_truth_table.hpp>
 #include <mockturtle/algorithms/equivalence_checking.hpp>
 #include <mockturtle/algorithms/miter.hpp>
+#include <mockturtle/views/depth_view.hpp>
 
 namespace experiments
 {
@@ -409,7 +410,7 @@ struct xag_stats
 
   xag_stats(mockturtle::xag_network const& ntk)
   {
-    mockturtle::depth_view xag (ntk);
+    mockturtle::depth_view xag {ntk};
     std::vector<uint32_t> lvls (xag.m_depth());
 
     xag.foreach_node( [&]( auto n ) {
