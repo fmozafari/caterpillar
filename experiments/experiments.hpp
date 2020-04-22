@@ -47,6 +47,7 @@
 
 #include <caterpillar/structures/stg_gate.hpp>
 #include <caterpillar/verification/circuit_to_logic_network.hpp>
+#include <caterpillar/details/depth_costs.hpp>
 #include <tweedledum/networks/netlist.hpp>
 #include <mockturtle/algorithms/simulation.hpp>
 #include <mockturtle/networks/xag.hpp>
@@ -54,6 +55,8 @@
 #include <mockturtle/algorithms/equivalence_checking.hpp>
 #include <mockturtle/algorithms/miter.hpp>
 #include <mockturtle/views/depth_view.hpp>
+
+using namespace mockturtle;
 
 namespace experiments
 {
@@ -376,8 +379,8 @@ bool check_equivalence_tt(Ntk const& ntk, tweedledum::netlist<caterpillar::stg_g
   assert (n_pis == pi_lines.size());
 
   const auto ntk_rev = caterpillar::circuit_to_logic_network<Ntk, tweedledum::netlist<caterpillar::stg_gate>>( rev, pi_lines, po_lines );
-  auto tt_ntk = mockturtle::simulate<kitty::dynamic_truth_table>( ntk, {n_pis} );
-  auto tt_rev = mockturtle::simulate<kitty::dynamic_truth_table>( *ntk_rev, {n_pis} );
+  auto tt_ntk = simulate<kitty::dynamic_truth_table>( ntk, {n_pis} );
+  auto tt_rev = simulate<kitty::dynamic_truth_table>( *ntk_rev, {n_pis} );
  
   return (tt_ntk == tt_rev);
 }
@@ -389,11 +392,11 @@ std::optional<bool> check_equivalence_ntk(Ntk const& ntk, tweedledum::netlist<ca
   assert (n_pis == pi_lines.size());
   
   const auto ntk_rev = caterpillar::circuit_to_logic_network<Ntk, tweedledum::netlist<caterpillar::stg_gate>>( rev, pi_lines, po_lines );
-  mockturtle::equivalence_checking_params ps;
+  equivalence_checking_params ps;
   ps.verbose = true;
-  if(auto mit = mockturtle::miter<Ntk>(ntk, *ntk_rev))
+  if(auto mit = miter<Ntk>(ntk, *ntk_rev))
   { 
-    return mockturtle::equivalence_checking(*mit, ps);
+    return equivalence_checking(*mit, ps);
   }
   else 
   {
@@ -401,22 +404,19 @@ std::optional<bool> check_equivalence_ntk(Ntk const& ntk, tweedledum::netlist<ca
   }
 }
 
+
 struct xag_stats
 {
-  uint32_t n_and = 0;
-  uint32_t n_xor = 0;
-  uint32_t mult_depth = 0;
-  uint32_t mult_width = 0;
-
-  xag_stats(mockturtle::xag_network const& ntk)
+  xag_stats(xag_network const& ntk)
   {
-    mockturtle::depth_view xag {ntk};
-    std::vector<uint32_t> lvls (xag.m_depth());
+    depth_view<xag_network, caterpillar::and_depth_cost<xag_network>> xag {ntk};
+
+    std::vector<uint32_t> lvls (xag.depth());
 
     xag.foreach_node( [&]( auto n ) {
       if( xag.is_and(n) ) 
       {
-        lvls[xag.m_level(n)-1]++; 
+        lvls[xag.level(n)-1]++; 
         n_and++;
       }
       else if(ntk.is_xor(n))
@@ -425,7 +425,7 @@ struct xag_stats
       }
     });
 
-    mult_depth = (n_and == 0) ? 0 : xag.m_depth();
+    mult_depth = (n_and == 0) ? 0 : xag.depth();
     mult_width = (mult_depth == 0) ? 0 : lvls[std::max_element(lvls.begin(), lvls.end()) - lvls.begin()];
   }
 
@@ -434,6 +434,10 @@ struct xag_stats
     std::cout << fmt::format("AND = {}, XOR = {}, MD = {}, MW = {}\n", n_and, n_xor, mult_depth, mult_width);
   }
 
+  uint32_t n_and = 0;
+  uint32_t n_xor = 0;
+  uint32_t mult_depth = 0;
+  uint32_t mult_width = 0;
 };
 
 /* finds T-count, T-depth and #CNOT for {X, CNOT, CCNOT} circuits where all CCNOT are computed on a clean helper line */

@@ -356,6 +356,7 @@ public:
 					bool s_pre = m.eval( ctx.bool_const( fmt::format("s_{}_{}", k-1, i).c_str() )).is_true();
 					bool s_cur = m.eval( ctx.bool_const( fmt::format("s_{}_{}", k, i).c_str() )).is_true();
 					assert (s_pre != s_cur);
+					(void)s_pre;
 
 					if( s_cur ) comp_act.push_back(i);
 					else uncomp_act.push_back(i);
@@ -414,7 +415,7 @@ public:
 				{
 					auto target = static_cast<uint32_t>(act_ch_node);
 
-					steps.push_back({act_node, compute_inplace_action{target, {}, {}}});
+					steps.push_back({act_node, compute_inplace_action{target, {}}});
 					if( verbose ) std::cout << "compute node " <<  act_node << " inplace on " << target << std::endl;
 				}
 				else

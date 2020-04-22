@@ -15,6 +15,7 @@
 #include <caterpillar/structures/stg_gate.hpp>
 #include <mockturtle/algorithms/simulation.hpp>
 #include <kitty/static_truth_table.hpp>
+#include <fmt/format.h>
 
 
 TEST_CASE("synthesize simple xag", "[XAG synthesis]")
@@ -37,6 +38,7 @@ TEST_CASE("synthesize simple xag", "[XAG synthesis]")
   logic_network_synthesis_stats st;
   ps.verbose = false;
 
+  
   xag_mapping_strategy strategy;
   logic_network_synthesis( qnet, xag, strategy, {}, ps, &st );
 
@@ -76,10 +78,11 @@ TEST_CASE("synthesize simple xag 2", "[XAG synthesis-2]")
   xag_mapping_strategy strategy;
   logic_network_synthesis( qnet, xag, strategy, {}, ps, &st );
 
-  auto tt_xag = simulate<kitty::static_truth_table<4>>( xag )[0];
+  auto tt_xag = simulate<kitty::static_truth_table<4>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
-  auto tt_ntk = simulate<kitty::static_truth_table<4>>( *ntk )[0];
+  auto tt_ntk = simulate<kitty::static_truth_table<4>>( *ntk );
   
+
   CHECK(tt_xag == tt_ntk);
   
 }
@@ -623,9 +626,10 @@ TEST_CASE("min depth synthesis XAG", "[mindepth]")
 
   logic_network_synthesis_stats st;
   logic_network_synthesis_params ps;
-  ps.verbose = false;
+  ps.verbose = true;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
+  write_unicode(rev);
   auto tt_xag = simulate<kitty::static_truth_table<6>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
   auto tt_ntk = simulate<kitty::static_truth_table<6>>( *ntk );
@@ -634,7 +638,7 @@ TEST_CASE("min depth synthesis XAG", "[mindepth]")
 }
 
 
-TEST_CASE("min depth synthesis XAG-2", "[mindepth2]")
+TEST_CASE("min depth synthesis XAG-2", "[mindepth]")
 {
   using namespace caterpillar;
   using namespace mockturtle;
@@ -663,6 +667,8 @@ TEST_CASE("min depth synthesis XAG-2", "[mindepth2]")
   ps.verbose = false;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
+  write_unicode(rev);
+
   auto tt_xag = simulate<kitty::static_truth_table<3>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
   auto tt_ntk = simulate<kitty::static_truth_table<3>>( *ntk );
@@ -710,8 +716,80 @@ TEST_CASE("min depth synthesis XAG no copies", "[mindepth3]")
   CHECK(tt_xag == tt_ntk);
 }
 
+TEST_CASE("min depth synthesis XAG-small", "[mindepth4]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+
+  xag_network xag;
+  auto x1 = xag.create_pi();
+  auto x2 = xag.create_pi();
+  auto x3 = xag.create_pi();
+  auto x4 = xag.create_pi();
 
 
+
+  auto n1 = xag.create_xor(x1, x2);
+  auto n2 = xag.create_xor(x2, x3);
+  auto n3 = xag.create_and(n1, n2);
+  auto n4 = xag.create_and(n2, x4);
+  auto n5 = xag.create_and( n4, n3);
+
+  xag.create_po(n5);
+
+
+  xag_low_depth_mapping_strategy strategy;
+  netlist<stg_gate> rev;
+
+  logic_network_synthesis_stats st;
+  logic_network_synthesis_params ps;
+
+  logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
+  auto tt_xag = simulate<kitty::static_truth_table<4>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<4>>( *ntk );
+
+  CHECK(tt_xag == tt_ntk);
+}
+
+TEST_CASE("min depth synthesis XAG-small ", "[mindepth5]")
+{
+  using namespace caterpillar;
+  using namespace mockturtle;
+  using namespace tweedledum;
+
+  xag_network xag;
+  auto x1 = xag.create_pi();
+  auto x2 = xag.create_pi();
+  auto x3 = xag.create_pi();
+  auto x4 = xag.create_pi();
+
+
+
+  auto n1 = xag.create_and(x1, x2);
+  auto n2 = xag.create_and(x1, x3);
+  auto n3 = xag.create_and(x1, x4);
+  auto n4 = xag.create_and(n2, n3);
+  auto n5 = xag.create_and( n4, n1);
+
+  xag.create_po(n5);
+
+
+  xag_low_depth_mapping_strategy strategy;
+  netlist<stg_gate> rev;
+
+  logic_network_synthesis_stats st;
+  logic_network_synthesis_params ps;
+  ps.verbose=true;
+
+  logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
+  auto tt_xag = simulate<kitty::static_truth_table<4>>( xag );
+  const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
+  auto tt_ntk = simulate<kitty::static_truth_table<4>>( *ntk );
+  write_unicode(rev);
+  CHECK(tt_xag == tt_ntk);
+}
 
 
 

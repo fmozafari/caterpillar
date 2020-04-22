@@ -18,7 +18,7 @@ namespace caterpillar
 struct compute_action
 {
   std::optional<std::vector<uint32_t>> leaves;
-  std::optional<std::vector<uint32_t>> copies;
+  
   /*! \brief Override node as cell.
    *
    * If a value is assigned to this variable, instead of using the gate
@@ -26,8 +26,6 @@ struct compute_action
    * and leaves is considered.
    */
   std::optional<std::pair<kitty::dynamic_truth_table, std::vector<uint32_t>>> cell_override;
-
-  
 
   
 };
@@ -49,7 +47,6 @@ struct compute_inplace_action
 {
   uint32_t target_index;
   std::optional<std::vector<uint32_t>> leaves;
-  std::optional<std::vector<uint32_t>> copies;
 };
 
 struct uncompute_inplace_action
@@ -60,19 +57,31 @@ struct uncompute_inplace_action
 
 struct compute_copy_action
 {
-
+  std::vector<uint32_t> copies;
 };
 
 struct uncompute_copy_action
 {
+  std::vector<uint32_t> copies;
+};
 
+struct compute_oncopies_action
+{
+  std::vector<uint32_t> leaves;
+  std::vector<uint32_t> copies;
+};
+struct uncompute_oncopies_action
+{
+  std::vector<uint32_t> leaves;
+  std::vector<uint32_t> copies;
 };
 
 
 using mapping_strategy_action = 
   std::variant<compute_action, uncompute_action,
                compute_inplace_action, uncompute_inplace_action, 
-               compute_copy_action, uncompute_copy_action>;
+               compute_copy_action, uncompute_copy_action, 
+               compute_oncopies_action, uncompute_oncopies_action>;
 
 namespace detail
 {

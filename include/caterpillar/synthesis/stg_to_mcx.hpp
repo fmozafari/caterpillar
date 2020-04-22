@@ -44,8 +44,7 @@ struct stg_from_esop
   void operator()( Network& network, kitty::dynamic_truth_table const& function,
                    std::vector<uint32_t> const& qubit_map )
   {
-    const auto num_controls = function.num_vars();
-    assert( qubit_map.size() == static_cast<std::size_t>( num_controls ) + 1u );
+    assert( qubit_map.size() == static_cast<std::size_t>( function.num_vars() ) + 1u );
 
     std::vector<uint32_t> target = {qubit_map.back()};
     const auto cubes = esop_synthesis_( function );

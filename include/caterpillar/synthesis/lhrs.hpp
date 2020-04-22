@@ -18,7 +18,7 @@
 #include <mockturtle/views/topo_view.hpp>
 #include <tweedledum/algorithms/synthesis/stg.hpp>
 #include <stack>
-
+#include <fmt/format.h>
 #include <variant>
 #include <vector>
 
@@ -68,7 +68,7 @@ public:
                                 SingleTargetGateSynthesisFn const& stg_fn,
                                 logic_network_synthesis_params const& ps,
                                 logic_network_synthesis_stats& st )
-      : qnet( qnet ), ntk( ntk ), strategy( strategy ), stg_fn( stg_fn ), ps( ps ), st( st ), node_to_qubit( ntk )
+      : qnet( qnet ), ntk( ntk ), strategy( strategy ), stg_fn( stg_fn ), ps( ps ), st( st )
   {
   }
 
@@ -91,43 +91,72 @@ public:
           overloaded{
               []( auto ) {},
               [&]( compute_copy_action const& action ) {
-                (void)action;
                 const auto t = request_ancilla();
                 
                 if ( ps.verbose )
                 {
-                  std::cout << "[i] copy " << ntk.node_to_index( node ) << " to qubit " << t << "\n";
+                  fmt::print("[i] copies for node {} to qubit {}\n", ntk.node_to_index( node ), t);
                 }
    
-                copy_node( node, t );
+                copy_node( action.copies, t );
                 copies[node].push(t);
               },
               [&]( uncompute_copy_action const& action ) {
-                (void)action;
-                const auto t = copies[node].top();
+                const auto t = copies[node].front();
                 
                 if ( ps.verbose )
                 {
-                  std::cout << "[i] uncopy " << ntk.node_to_index( node ) << " from qubit " << t << "\n";
+                  fmt::print("[i] remove copies for {} from qubit {}\n",  node , t);
                 }
-                copy_node( node, t );
+                copy_node( action.copies, t );
                 copies[node].pop();
+                // this would allow reusing qubits but increases the T depth
+                //release_ancilla( t );
+              },
+              [&]( compute_oncopies_action const& action ) {
+                const auto t = copies[node].front();
 
+                if (ps.verbose) 
+                {
+                  fmt::print("[i] compute {} on its copies on qubit {}\n", node, t); 
+                  fmt::print("with leaves {}\n", fmt::join(action.leaves, " "));
+                  fmt::print("and copies {}\n", fmt::join(action.copies, " "));
+
+                }
+                std::vector<uint32_t> rem_leaves;
+                std::set_symmetric_difference( 
+                  action.leaves.begin(), action.leaves.end(), action.copies.begin(), action.copies.end(), 
+                  std::back_inserter(rem_leaves) );
+
+                compute_big_xor( t, rem_leaves);
+                node_to_qubit[node].push( t );
+              },
+              [&]( uncompute_oncopies_action const& action ) {
+                const auto t = node_to_qubit[node].top();
+
+                if (ps.verbose) 
+                {
+                  fmt::print("[i] uncompute {} on its copies from qubit {}\n", node, t); 
+                  fmt::print("with leaves {}\n", fmt::join(action.leaves, " "));
+                  fmt::print("and copies {}\n", fmt::join(action.copies, " "));
+                }
+
+                std::vector<uint32_t> rem_leaves;
+                std::set_symmetric_difference( 
+                  action.leaves.begin(), action.leaves.end(), action.copies.begin(), action.copies.end(), 
+                  std::back_inserter(rem_leaves) );
+
+                compute_big_xor( t, rem_leaves);
+                node_to_qubit[node].pop();
               },
               [&]( compute_action const& action ) {
-                const auto t = node_to_qubit[node] = request_ancilla();
+                const auto t = request_ancilla();
+                node_to_qubit[node].push(t);
                 if ( ps.verbose )
                 {
-                  std::cout << "[i] compute " << ntk.node_to_index( node ) << " in qubit " << t;
-                  if ( action.leaves )
-                  {
-                    std::cout << " with leaves: ";
-                    for(auto l : *action.leaves)
-                    {
-                      std::cout << l << " ";
-                    }
-                  }
-                  std::cout << "\n";
+                  fmt::print("[i] compute {} in qubit {}\n", node, t);
+                  if ( action.leaves )   
+                    fmt::print(" with leaves: {} \n", fmt::join(*action.leaves, " ")); 
                 }
                 if ( action.cell_override )
                 {
@@ -136,36 +165,20 @@ public:
                 }
                 else if (action.leaves)
                 {
-                  if (action.copies)
-                    compute_big_xor(t, *action.leaves, *action.copies);
-                  else
                   compute_big_xor( t, *action.leaves );
                 }
                 else
                 {
-                  if (action.copies)
-                  {
-                    compute_node( node, t, *action.copies );
-                  }
-                  else
-                  compute_node( node, t );
-                  
+                  compute_node( node, t ); 
                 }
               },
               [&]( uncompute_action const& action ) {
-                const auto t = node_to_qubit[node];
+                const auto t = node_to_qubit[node].top();
                 if ( ps.verbose )
                 {  
-                  std::cout << "[i] uncompute " << ntk.node_to_index( node ) << " from qubit " << t;
-                  if ( action.leaves )
-                  {
-                    std::cout << " with leaves: ";
-                    for(auto l : *action.leaves)
-                    {
-                      std::cout << l << " ";
-                    }
-                  }
-                  std::cout << "\n";
+                  fmt::print("[i] uncompute {} from qubit {}\n", node, t);
+                  if ( action.leaves )   
+                    fmt::print(" with leaves: {} \n", fmt::join(*action.leaves, " ")); 
                 }
                 if ( action.cell_override )
                 {
@@ -183,61 +196,32 @@ public:
                 release_ancilla( t );
               },
               [&]( compute_inplace_action const& action ) {
+                const auto t = node_to_qubit[ntk.index_to_node( action.target_index )].top() ;
+                node_to_qubit[node].push(t);
+
                 if ( ps.verbose )
                 {  
-                  std::cout << "[i] compute " << ntk.node_to_index( node ) << " inplace onto node " << action.target_index << "\n";
-                  if ( action.leaves )
-                  {
-                    std::cout << " with leaves: ";
-                    for(auto l : *action.leaves)
-                    {
-                      std::cout << l << " ";
-                    }
-                  }
-                  std::cout << "\n";
+                  fmt::print("[i] compute {} inplace onto node {}\n", node , action.target_index);
+                  if ( action.leaves )   
+                    fmt::print(" with leaves: {} \n", fmt::join(*action.leaves, " ")); 
                 }
-                node_to_qubit[node] = node_to_qubit[ntk.index_to_node( action.target_index )];
-                const auto t = ntk.index_to_node( action.target_index );
                 if (action.leaves)
                 {
-                  if (action.copies)
-                  {
-                    std::vector<uint32_t> cps = *action.copies;
-                    compute_big_xor(t, *action.leaves, cps);
-
-                    if(std::find(cps.begin(), cps.end(), t) != cps.end())
-                      node_to_qubit[node] = copies[t].top();
-                  }
-                  else
-                  {
-                  compute_big_xor( t, *action.leaves );
-                }
+                  compute_big_xor(t, *action.leaves);
                 }
                 else
-                {
-                   if (action.copies)
-                   {
-                    compute_node_inplace( node, node_to_qubit[t] , *action.copies);
-                }
-                  else
-                    compute_node_inplace( node, node_to_qubit[t] );
+                {  
+                  compute_node_inplace( node, t );
                 }
               },
               [&]( uncompute_inplace_action const& action ) {
+                const auto t = node_to_qubit[node].top();
                 if ( ps.verbose )
                 {
-                  std::cout << "[i] uncompute " << ntk.node_to_index( node ) << " inplace onto " << action.target_index << " from qubit " << node_to_qubit[ntk.index_to_node( action.target_index )];
-                  if ( action.leaves )
-                  {
-                    std::cout << " with leaves: ";
-                    for(auto l : *action.leaves)
-                    {
-                      std::cout << l << " ";
-                    }
-                  }
-                  std::cout << "\n";
+                  fmt::print("[i] uncompute {} inplace to {}\n", node , action.target_index);
+                  if ( action.leaves )   
+                    fmt::print(" with leaves: {} \n", fmt::join(*action.leaves, " ")); 
                 }
-                const auto t = node_to_qubit[node];
                 if (action.leaves)
                 {
                   compute_big_xor(  t, *action.leaves );
@@ -260,10 +244,17 @@ private:
   {
     /* prepare primary inputs of logic network */
     ntk.foreach_pi( [&]( auto n ) {
-      node_to_qubit[n] = qnet.num_qubits();
-      st.i_indexes.push_back( node_to_qubit[n] );
+      std::stack<uint32_t> sta;
+      sta.push( qnet.num_qubits() );
+      node_to_qubit[n] = sta;
+      st.i_indexes.push_back( node_to_qubit[n].top() );
       qnet.add_qubit();
     } );
+    ntk.foreach_gate( [&]( auto n ) {
+      std::stack<uint32_t> sta;
+      node_to_qubit[n] = sta;
+    } );
+  
   }
 
   void prepare_constant( bool value )
@@ -273,10 +264,10 @@ private:
     if ( ntk.fanout_size( n ) == 0 )
       return;
     const auto v = ntk.constant_value( n ) ^ ntk.is_complemented( f );
-    node_to_qubit[n] = qnet.num_qubits();
+    node_to_qubit[n].push( qnet.num_qubits() );
     qnet.add_qubit();
     if ( v )
-      qnet.add_gate( tweedledum::gate::pauli_x, node_to_qubit[n] );
+      qnet.add_gate( tweedledum::gate::pauli_x, node_to_qubit[n].top() );
   }
 
   uint32_t request_ancilla()
@@ -306,7 +297,7 @@ private:
       {
         auto new_i = request_ancilla();
 
-        qnet.add_gate( tweedledum::gate::cx, node_to_qubit[ntk.node_to_index( node )], new_i );
+        qnet.add_gate( tweedledum::gate::cx, node_to_qubit[ntk.node_to_index( node )].top(), new_i );
         if ( ntk.is_complemented( s ) != ntk.is_complemented( node_to_signals[node] ) )
         {
           qnet.add_gate( tweedledum::gate::pauli_x, new_i );
@@ -317,10 +308,10 @@ private:
       {
         if ( ntk.is_complemented( s ) )
         {
-          qnet.add_gate( tweedledum::gate::pauli_x, node_to_qubit[ntk.node_to_index( node )] );
+          qnet.add_gate( tweedledum::gate::pauli_x, node_to_qubit[ntk.node_to_index( node )].top() );
         }
         node_to_signals[node] = s;
-        st.o_indexes.push_back( node_to_qubit[ntk.node_to_index( node )] );
+        st.o_indexes.push_back( node_to_qubit[ntk.node_to_index( node )].top() );
       }
     } );
   }
@@ -345,32 +336,33 @@ private:
     SetQubits controls;
     ntk.foreach_fanin( n, [&]( auto const& f ) {
       assert( !ntk.is_complemented( f ) );
-      controls.push_back( tweedledum::qubit_id( node_to_qubit[ntk.node_to_index( ntk.get_node( f ) )] ) );
+      controls.push_back( tweedledum::qubit_id( node_to_qubit[ntk.node_to_index( ntk.get_node( f ) )].top() ) );
     } );
     return controls;
   }
 
-  void compute_big_xor( uint32_t target, std::vector<uint32_t> leaves, std::vector<uint32_t> cps = {})
+  void compute_big_xor( uint32_t const t, std::vector<uint32_t> const leaves)
   {
-    assert( leaves.size() > 1);
     for ( auto control : leaves )
     {
-      if (control != target)
-      {
-        auto c = std::find(cps.begin(), cps.end(), control) == cps.end() ? node_to_qubit[control] : copies[control].top();
-        auto t = std::find(cps.begin(), cps.end(), target) == cps.end() ? node_to_qubit[target] : copies[target].top();
-     
+      auto c =  node_to_qubit[control].top();
+      if (c != t)
+      {     
         qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( c ), tweedledum::qubit_id( t ) );
       }
     }
   }
 
-  void copy_node( uint32_t node, uint32_t t )
+  void copy_node( std::vector<uint32_t> copies, uint32_t t )
   {
-    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( node_to_qubit[node] ), tweedledum::qubit_id( t ) );
+    for( auto cp : copies)
+    {
+      assert(node_to_qubit[cp].top() != t);
+      qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( node_to_qubit[cp].top() ), tweedledum::qubit_id( t ) );
+    }
   }
 
-  void compute_node( mt::node<LogicNetwork> const& node, uint32_t t,  std::vector<uint32_t> cps = {})
+  void compute_node( mt::node<LogicNetwork> const& node, uint32_t t)
   {
     if constexpr ( mt::has_is_and_v<LogicNetwork> )
     {
@@ -380,25 +372,9 @@ private:
         auto node0 = ntk.index_to_node( controls[0] >> 1 );
         auto node1 = ntk.index_to_node( controls[1] >> 1 );
 
-        SetQubits pol_controls;
-   
-        if(std::find(cps.begin(), cps.end(), node0) != cps.end())
-        {
-          pol_controls.emplace_back( copies[node0].top(), controls[0] & 1 );
-        }
-        else
-        {
-          pol_controls.emplace_back( node_to_qubit[node0], controls[0] & 1 );
-        }
-
-        if(std::find(cps.begin(), cps.end(), node1) != cps.end())
-        {
-          pol_controls.emplace_back( copies[node1].top(), controls[1] & 1 );
-        }
-        else
-        {
-          pol_controls.emplace_back( node_to_qubit[node1], controls[1] & 1 );
-        }
+        SetQubits pol_controls;     
+        pol_controls.emplace_back( node_to_qubit[node0].top(), controls[0] & 1 );
+        pol_controls.emplace_back( node_to_qubit[node1].top(), controls[1] & 1 );
         
         compute_and( pol_controls, t );
         return;
@@ -411,8 +387,8 @@ private:
         auto controls = get_fanin_as_literals<2>( node );
 
         SetQubits pol_controls;
-        pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[0] >> 1 )], !( controls[0] & 1 ) );
-        pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )], !( controls[1] & 1 ) );
+        pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[0] >> 1 )].top(), !( controls[0] & 1 ) );
+        pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(), !( controls[1] & 1 ) );
 
         compute_or( pol_controls, t );
         return;
@@ -424,9 +400,9 @@ private:
       {
         
         auto controls = get_fanin_as_literals<2>( node );
-        compute_xor( node_to_qubit[ntk.index_to_node( controls[0] >> 1 )],
-                     node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
-                     ( controls[0] & 1 ) != ( controls[1] & 1 ), t, cps );
+        compute_xor( node_to_qubit[ntk.index_to_node( controls[0] >> 1 )].top(),
+                     node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(),
+                     ( controls[0] & 1 ) != ( controls[1] & 1 ), t );
         return;
       }
     }
@@ -439,17 +415,17 @@ private:
         /* Is XOR3 in fact an XOR2? */
         if ( ntk.is_constant( ntk.index_to_node( controls[0] >> 1 ) ) )
         {
-          compute_xor( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
-                       node_to_qubit[ntk.index_to_node( controls[2] >> 1 )],
+          compute_xor( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(),
+                       node_to_qubit[ntk.index_to_node( controls[2] >> 1 )].top(),
                        ( ( controls[0] & 1 ) != ( controls[1] & 1 ) ) != ( controls[2] & 1 ),
-                       t , cps);
+                       t );
         }
         else
         {
           compute_xor3(
-              node_to_qubit[ntk.index_to_node( controls[0] >> 1 )],
-              node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
-              node_to_qubit[ntk.index_to_node( controls[2] >> 1 )],
+              node_to_qubit[ntk.index_to_node( controls[0] >> 1 )].top(),
+              node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(),
+              node_to_qubit[ntk.index_to_node( controls[2] >> 1 )].top(),
               ( ( controls[0] & 1 ) != ( controls[1] & 1 ) ) != ( controls[2] & 1 ),
               t );
         }
@@ -467,16 +443,16 @@ private:
           if ( controls[0] & 1 )
           {
             SetQubits pol_controls;
-            pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )], !( controls[1] & 1 ) );
-            pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[2] >> 1 )], !( controls[2] & 1 ) );
+            pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(), !( controls[1] & 1 ) );
+            pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[2] >> 1 )].top(), !( controls[2] & 1 ) );
 
             compute_or( pol_controls, tweedledum::qubit_id( t ) );
           }
           else
           {
             SetQubits pol_controls;
-            pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )], controls[1] & 1 );
-            pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[2] >> 1 )], controls[2] & 1 );
+            pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(), controls[1] & 1 );
+            pol_controls.emplace_back( node_to_qubit[ntk.index_to_node( controls[2] >> 1 )].top(), controls[2] & 1 );
 
             compute_and( pol_controls, tweedledum::qubit_id( t ) );
           }
@@ -484,9 +460,9 @@ private:
         else
         {
           compute_maj(
-              node_to_qubit[ntk.index_to_node( controls[0] >> 1 )],
-              node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
-              node_to_qubit[ntk.index_to_node( controls[2] >> 1 )],
+              node_to_qubit[ntk.index_to_node( controls[0] >> 1 )].top(),
+              node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(),
+              node_to_qubit[ntk.index_to_node( controls[2] >> 1 )].top(),
               controls[0] & 1, controls[1] & 1, controls[2] & 1, t );
         }
         return;
@@ -522,22 +498,22 @@ private:
     SetQubits controls;
     for ( auto l : leave_indexes )
     {
-      controls.push_back( tweedledum::qubit_id( node_to_qubit[ntk.node_to_index( l )] ) );
+      controls.push_back( tweedledum::qubit_id( node_to_qubit[ntk.node_to_index( l )].top() ) );
     }
 
     compute_lut( func, controls, tweedledum::qubit_id( t ) );
   }
 
-  void compute_node_inplace( mt::node<LogicNetwork> const& node, uint32_t t, std::vector<uint32_t> const& cps = {} )
+  void compute_node_inplace( mt::node<LogicNetwork> const& node, uint32_t t )
   {
     if constexpr ( mt::has_is_xor_v<LogicNetwork> )
     {
       if ( ntk.is_xor( node ) )
       {
         auto controls = get_fanin_as_literals<2>( node );
-        compute_xor_inplace( node_to_qubit[ntk.index_to_node( controls[0] >> 1 )],
-                             node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
-                             ( controls[0] & 1 ) != ( controls[1] & 1 ), t , cps);
+        compute_xor_inplace( node_to_qubit[ntk.index_to_node( controls[0] >> 1 )].top(),
+                             node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(),
+                             ( controls[0] & 1 ) != ( controls[1] & 1 ), t );
         return;
       }
     }
@@ -551,17 +527,17 @@ private:
         if ( ntk.is_constant( ntk.index_to_node( controls[0] >> 1 ) ) )
         {
           compute_xor_inplace(
-              node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
-              node_to_qubit[ntk.index_to_node( controls[2] >> 1 )],
+              node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(),
+              node_to_qubit[ntk.index_to_node( controls[2] >> 1 )].top(),
               ( ( controls[0] & 1 ) != ( controls[1] & 1 ) ) != ( controls[2] & 1 ),
               t );
         }
         else
         {
           compute_xor3_inplace(
-              node_to_qubit[ntk.index_to_node( controls[0] >> 1 )],
-              node_to_qubit[ntk.index_to_node( controls[1] >> 1 )],
-              node_to_qubit[ntk.index_to_node( controls[2] >> 1 )],
+              node_to_qubit[ntk.index_to_node( controls[0] >> 1 )].top(),
+              node_to_qubit[ntk.index_to_node( controls[1] >> 1 )].top(),
+              node_to_qubit[ntk.index_to_node( controls[2] >> 1 )].top(),
               ( ( controls[0] & 1 ) != ( controls[1] & 1 ) ) != ( controls[2] & 1 ),
               t );
         }
@@ -586,13 +562,10 @@ private:
     qnet.add_gate( tweedledum::gate::pauli_x, tweedledum::qubit_id( t ) );
   }
 
-  void compute_xor( uint32_t c1, uint32_t c2, bool inv, uint32_t t, std::vector<uint32_t> const& cps = {})
+  void compute_xor( uint32_t c1, uint32_t c2, bool inv, uint32_t t)
   {
-    auto new_c1 = (std::find(cps.begin(), cps.end(), c1) == cps.end()) ? c1 : copies[c1].top();
-    auto new_c2 = (std::find(cps.begin(), cps.end(), c2) == cps.end()) ? c2 : copies[c2].top();
-
-    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( new_c1 ), tweedledum::qubit_id( t ) );
-    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( new_c2 ), tweedledum::qubit_id( t ) );
+    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( c1 ), tweedledum::qubit_id( t ) );
+    qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( c2 ), tweedledum::qubit_id( t ) );
     if ( inv )
       qnet.add_gate( tweedledum::gate::pauli_x, tweedledum::qubit_id( t ) );
   }
@@ -652,10 +625,8 @@ private:
     stg_fn( qnet, qubit_map, function );
   }
 
-  void compute_xor_inplace( uint32_t oc1, uint32_t oc2, bool inv, uint32_t t, std::vector<uint32_t> const& cps = {} )
+  void compute_xor_inplace( uint32_t c1, uint32_t c2, bool inv, uint32_t t )
   {
-    auto c1 = (std::find(cps.begin(), cps.end(), oc1) == cps.end()) ? oc1 : copies[oc1].top();
-    auto c2 = (std::find(cps.begin(), cps.end(), oc2) == cps.end()) ? oc2 : copies[oc2].top();
 
     if ( c1 == t && c2 != t)
     {
@@ -709,9 +680,10 @@ private:
   SingleTargetGateSynthesisFn const& stg_fn;
   logic_network_synthesis_params const& ps;
   logic_network_synthesis_stats& st;
-  mt::node_map<uint32_t, LogicNetwork> node_to_qubit;
+  std::unordered_map<uint32_t, std::stack<uint32_t>> node_to_qubit;
   std::stack<uint32_t> free_ancillae;
-  std::unordered_map<uint32_t, std::stack<uint32_t>> copies;
+  /* stores for each root of the cone a queue of qubits where its copies are and its previous location */
+  std::unordered_map<uint32_t, std::queue<uint32_t>> copies;
 }; // namespace detail
 
 } // namespace detail

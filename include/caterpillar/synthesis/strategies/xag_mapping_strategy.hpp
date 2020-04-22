@@ -19,7 +19,7 @@
 #include <tweedledum/networks/netlist.hpp>
 #include <caterpillar/details/bron_kerbosch.hpp>
 #include <caterpillar/details/bron_kerbosch_utils.hpp>
-
+#include <caterpillar/details/depth_costs.hpp>
 #include <algorithm>
 #include <chrono>
 #include <fmt/format.h>
@@ -35,15 +35,18 @@ using steps_xag_t = std::vector<std::pair<node_t, mapping_strategy_action>>;
 using steps_abs_t = std::vector<std::pair<abstract_network::node, mapping_strategy_action>>;
 using SolverType = z3_pebble_solver<abstract_network>;
 #endif
+
 struct action_sets
 {
   node_t node;
   std::vector<uint32_t> target;
   std::vector<uint32_t> leaves;
+  std::vector<uint32_t> copies = {};
 
   action_sets( node_t node, std::vector<uint32_t> leaves, std::vector<uint32_t> target = {} )
       : node(node), target(target), leaves(leaves) {};
 };
+
 
 inline std::vector<uint32_t> sym_diff(std::vector<uint32_t> first, std::vector<uint32_t> second)
 {
@@ -154,84 +157,74 @@ inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network
   return cones;
 }
 
-static inline steps_xag_t gen_steps( node_t node, std::vector<action_sets>& cones, bool compute, std::vector<uint32_t> const& cps = {})
+static inline steps_xag_t gen_steps( node_t node, std::vector<action_sets> cones, bool compute)
 {
   steps_xag_t comp_steps;
-
+  
   for(auto ch : cones)
   {
-
-    if (ch.leaves.size() > 1){
-      if ( !ch.target.empty() )
-      {
-        if (cps.empty())
-          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves, std::nullopt}} );
+    if(ch.copies.empty() || !compute)
+    {
+      if (ch.leaves.size() > 1){
+        if ( !ch.target.empty() )
+        {
+          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
+        }
         else 
-          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves, cps}} );
-      }
-      else 
-      {
-        if (cps.empty())
-          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt, std::nullopt}} );
-        else 
-          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, cps, std::nullopt}} );
-
+        {
+          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt}} );
+        }
       }
     }
+    else 
+    {
+      comp_steps.push_back( {ch.node, compute_oncopies_action{ch.leaves, ch.copies}} );
+    }
+
   }
   
   if(compute)
-  {
-    if (cps.empty())
-      comp_steps.push_back( {node, compute_action{}} );
-    else
-      comp_steps.push_back( {node, compute_action{std::nullopt, cps, std::nullopt}} );
-  }
-  else 
-  {
+    comp_steps.push_back( {node, compute_action{}} );
+  else
     comp_steps.push_back( {node, uncompute_action{}} );
-  }
 
 
   std::reverse( cones.begin(), cones.end() );
 
   for(auto ch : cones)
   {
-    if (ch.leaves.size() > 1){
-      if ( !ch.target.empty() )
-      {
-        if (cps.empty())
-          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves, std::nullopt}} );
+    if(ch.copies.empty() || !compute)
+    {
+      if (ch.leaves.size() > 1){
+        if ( !ch.target.empty() )
+        {
+          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
+        }
         else 
-          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves, cps}} );
-      }
-      else 
-      {
-        if (cps.empty())
-          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt, std::nullopt}} );
-        else 
-          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, cps, std::nullopt}} );
-
+        {
+          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt}} );
+        }
       }
     }
+    else 
+    {
+      comp_steps.push_back( {ch.node, uncompute_oncopies_action{ch.leaves, ch.copies}} );
+      comp_steps.push_back( {ch.node, uncompute_copy_action{ ch.copies}} );
+    }
   }
-  for(auto& cp : cps)
-    comp_steps.push_back({cp, uncompute_copy_action{}});
   
   return comp_steps;
 }
 
-template<class Ntk>
-static inline std::vector<std::vector<node_t>> get_levels( Ntk const& xag, std::vector<node_t> const& drivers)
+
+static inline std::vector<std::vector<node_t>> get_levels( xag_network const& xag_t, std::vector<node_t> const& drivers)
 {
-  static_assert(mockturtle::has_depth_v<Ntk>, "Ntk does not implement the member depth");
+  depth_view<xag_network, xag_depth_cost<xag_network>> xag {xag_t};
 
   std::vector<std::vector<node_t>>levels (xag.depth());
                                                                  
   xag.foreach_node( [&]( auto n ) {
-    if( xag.is_and(n) ) 
-      levels[xag.m_level(n)-1].push_back(n);
-    else if( std::find( drivers.begin(), drivers.end(), n ) != drivers.end() ) 
+    if( xag.is_and(n) || std::find( drivers.begin(), drivers.end(), n ) != drivers.end() ) 
       levels[xag.level(n)-1].push_back(n);
   });
 
@@ -307,7 +300,6 @@ public:
 */
 class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
 {
-
  
   steps_xag_t get_box_steps(steps_abs_t const& store_steps)
   {
@@ -420,23 +412,41 @@ public:
 */
 class xag_low_depth_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
 {
-  template<class T>
-  T concat (T const& f, T const& s)
+  void eval_copies(std::vector<action_sets>& cones, boost::dynamic_bitset<>& visited)
   {
-    auto comp = f;
-    comp.insert(comp.end(), s.begin(), s.end());
-    return comp;
+    for(auto& cone : cones) 
+    {
+      for (auto l : cone.leaves )
+      {
+        assert( l < visited.size());
+        if( visited[l] == true)
+        {
+          cone.copies.push_back(l);
+        }
+        else
+        {
+          visited.set(l);
+        }
+      }
+    }
   }
 
-  steps_xag_t get_copies(std::vector<uint32_t> const& leaves_to_copy)
+  steps_xag_t gen_copies(std::vector<node_t> const& lvl, std::map<node_t, std::vector<action_sets>>& node_and_action)
   {
-    steps_xag_t copies;
-    copies.reserve(leaves_to_copy.size());
-    for(auto l : leaves_to_copy)
+    steps_xag_t cp_st;
+    for(auto const& n : lvl)
     {
-      copies.push_back({l, compute_copy_action{}});
+      auto cones = node_and_action[n];
+      if(!cones[0].copies.empty())
+      {
+        cp_st.push_back({cones[0].node, compute_copy_action{cones[0].copies}});
+      }
+      if(!cones[1].copies.empty())
+      {
+        cp_st.push_back({cones[1].node, compute_copy_action{cones[1].copies}});
+      }
     }
-    return copies;
+    return cp_st;
   }
 
 public: 
@@ -444,100 +454,48 @@ public:
   bool compute_steps( mockturtle::xag_network const& ntk ) override
   {
     // the strategy proceeds in topological order and level by level
-    mockturtle::topo_view xag_t {ntk};
-    mockturtle::depth_view xag {xag_t};
+    mockturtle::topo_view xag {ntk};
 
     auto drivers = detail::get_outputs(xag);
+
+    /* iterate the xag to extract transitive fanin cones for all nodes */
     auto fi = get_fi(xag, drivers);
 
-    /*each m_level is filled with AND nodes and XOR outputs */
+    /* each m_level is filled with AND nodes and XOR outputs */
     auto levels = get_levels(xag, drivers);
     
     auto it = steps().begin();
 
     for(auto lvl : levels){ if(lvl.size() != 0)
     {
-      std::cout << "\nStart level ... of size " << lvl.size() << " \n";
+      /* store two action sets for each node in the level */
+      std::map<node_t, std::vector<action_sets>> node_and_action;
 
-      std::map< node_t, std::pair<std::vector<action_sets>, std::vector<uint32_t>> > node_and_action;
-      std::vector<uint32_t> all_copies;
+      /* keeps track of the visited children of the nodes in the level */
       boost::dynamic_bitset<> visited (xag.size());
-
-
-      microseconds cones_time {0};
-      microseconds conc_time {0};
-      microseconds insert_time {0};
-      microseconds store_time {0};
-      microseconds visited_time {0};
-
-
-      auto start_lvl = high_resolution_clock::now();
 
       for(auto n : lvl)
       {
-
         auto cones = get_cones(n, xag, fi);
-
         if(xag.is_and(n))
         {
-          std::vector<uint32_t> node_copies;
-
-          /*/*/auto due = high_resolution_clock::now();
-          auto all_leaves = concat(cones[0].leaves, cones[1].leaves);
-          /*/*/conc_time = conc_time + duration_cast<microseconds>(high_resolution_clock::now() - due);
-          
-          for (auto& l : all_leaves )
-          {
-            /*/*/auto tre = high_resolution_clock::now(); 
-            assert( l < visited.size());
-            if( visited[l] == true)
-            {
-              node_copies.push_back(l);
-            }
-            else
-            {
-              visited.set(l);
-            }
-            /*/*/visited_time = visited_time + duration_cast<microseconds>(high_resolution_clock::now() - tre);
-          }
-          /*/*/auto cinque = high_resolution_clock::now();
-          node_and_action[n] = {cones, node_copies};
-          /*/*/store_time = store_time + duration_cast<microseconds>(high_resolution_clock::now() - cinque);
-
-          /*/*/auto quattro = high_resolution_clock::now();
-          all_copies.insert(all_copies.end(), node_copies.begin(), node_copies.end());
-          /*/*/insert_time = insert_time + duration_cast<microseconds>(high_resolution_clock::now() - quattro);
+          /* modifies cones.leaves and cones.copies according to visited */
+          eval_copies(cones, visited);
         }
-        else //xor outputs do not need copies
-        {
-          /*/*/auto sei = high_resolution_clock::now();
-          node_and_action[n] = {cones, {}};
-          /*/*/store_time = store_time + duration_cast<microseconds>(high_resolution_clock::now() - sei);
 
-        }
+        node_and_action[n] = cones;
       }
-
-      std::cout << fmt::format("/t[t] step 1 takes: {} ms\n", duration_cast<milliseconds>(high_resolution_clock::now() - start_lvl).count());
-      //std::cout << fmt::format("/t/t[t] store takes: {} ms\n", store_time.count()/1000);
-
-      //std::cout << fmt::format("/t/t[t] get_cones takes: {} ms\n", cones_time.count()/1000);
-      //std::cout << fmt::format("/t/t[t] concat takes: {} ms\n", conc_time.count()/1000);
-      //std::cout << fmt::format("/t/t[t] check visit takes: {} ms\n", visited_time.count()/1000);
-      //std::cout << fmt::format("/t/t[t] insert takes: {} ms\n", insert_time.count()/1000);
-
-
-      
-      auto start_2 = high_resolution_clock::now();
-      /* all the copy operations for the level are inserted */
-      auto copies = get_copies(all_copies);
-      it = steps().insert(it, copies.begin(), copies.end());
-      it = it + copies.size();
-      
+ 
+      /* all the copy operations are inserted */
+      auto cp = gen_copies(lvl, node_and_action);
+      it = steps().insert(it, cp.begin(), cp.end());
+      it = it + cp.size();  
+     
       /* all the node operations are inserted */
       /* uncopies are done after computing each node */
       for (auto n : lvl)
       {
-        auto cc = gen_steps(n, node_and_action[n].first, true, node_and_action[n].second);
+        auto cc = gen_steps(n, node_and_action[n], true);
 
         it = steps().insert(it, cc.begin(), cc.end());
 
@@ -547,13 +505,11 @@ public:
         /* uncomputing does not need copies as it does not require T gates */
         if ( std::find( drivers.begin(), drivers.end(), n ) == drivers.end()  )
         { 
-          auto uc = gen_steps( n , node_and_action[n].first, false);
+          auto uc = gen_steps( n , node_and_action[n], false);
           it = steps().insert( it, uc.begin(), uc.end() );
         }
       }
-      std::cout << fmt::format("/t[t] step 2 takes: {} ms\n", duration_cast<milliseconds>(high_resolution_clock::now() - start_2).count());
-
-      std::cout << fmt::format("[t] lvl takes: {} ms\n", duration_cast<milliseconds>(high_resolution_clock::now()-start_lvl).count() );
+      
     }
     }
     return true;
@@ -621,10 +577,9 @@ public:
   
   bool compute_steps( mockturtle::xag_network const& ntk ) override
   {
-    // the strategy proceeds in topological order and level by level
-    mockturtle::topo_view xag_t {ntk};
+    // the strategy proceeds in topological order
+    mockturtle::topo_view xag {ntk};
 
-    mockturtle::depth_view xag {xag_t};
 
     auto drivers = detail::get_outputs(xag);
     auto fi = get_fi (xag, drivers);
