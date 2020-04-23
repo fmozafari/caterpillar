@@ -51,6 +51,13 @@ struct action_sets
 inline std::vector<uint32_t> sym_diff(std::vector<uint32_t> first, std::vector<uint32_t> second)
 {
   std::vector<uint32_t> diff;
+  /* this one works on sorted ranges */
+  for(int i = 0; i< (int)(first.size()) - 1; i++)
+    assert(first[i] < first[i+1]);
+  
+  for(int i = 0; i< (int)(second.size() - 1); i++)
+    assert(second[i] < second[i+1]);
+  
   std::set_symmetric_difference( first.begin(), first.end(), second.begin(), second.end(), std::back_inserter(diff) );
   return diff;
 }
@@ -73,6 +80,7 @@ inline bool is_included(std::vector<uint32_t> first, std::vector<uint32_t> secon
 
 inline void update_fi( node_t node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>>& fi, std::vector<node_t> const& drivers )
 {
+
   if ( xag.is_and( node ) || xag.is_pi(node) || (std::find(drivers.begin(), drivers.end(), node) != drivers.end()))
   {
     fi[ xag.node_to_index(node) ] = { xag.node_to_index(node) };
@@ -153,6 +161,14 @@ inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network
       cones[0].target = fi[left];
     }
   }
+  if ( cones[0].leaves.size() == 1 && cones[0].leaves[0] != cones[0].node )
+  {
+    cones[0].target = cones[0].leaves;
+  }
+  if ( cones[1].leaves.size() == 1 && cones[1].leaves[0] != cones[1].node )
+  {
+    cones[1].target = cones[1].leaves;
+  }
 
   return cones;
 }
@@ -165,7 +181,12 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<action_sets> cones
   {
     if(ch.copies.empty() || !compute)
     {
-      if (ch.leaves.size() > 1){
+      if ( (ch.leaves.size()==1) && (ch.leaves[0]!=ch.node) ){
+        ch.leaves.erase(ch.leaves.end()-1);
+        comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
+      }
+      else if( ch.leaves.size()>1 )
+      {
         if ( !ch.target.empty() )
         {
           comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
@@ -256,6 +277,8 @@ public:
     auto it = steps().begin();
 
     xag.foreach_node( [&]( auto node ) {
+      
+
       
       if ( xag.is_and( node ) || std::find( drivers.begin(), drivers.end(), node ) != drivers.end() )
       {
@@ -463,7 +486,6 @@ public:
 
     /* each m_level is filled with AND nodes and XOR outputs */
     auto levels = get_levels(xag, drivers);
-    
     auto it = steps().begin();
 
     for(auto lvl : levels){ if(lvl.size() != 0)
@@ -511,6 +533,7 @@ public:
       }
       
     }
+    
     }
     return true;
   }
