@@ -564,7 +564,6 @@ TEST_CASE("pebbling XAG with weights", "[minweight]")
   auto x5 = xag.create_pi();
   auto x6 = xag.create_pi();
 
-
   auto n1 = xag.create_xor(x1, x2);
   auto n2 = xag.create_and(x2, n1);
   auto n3 = xag.create_and(x2, n2);
@@ -626,7 +625,7 @@ TEST_CASE("min depth synthesis XAG", "[mindepth]")
 
   logic_network_synthesis_stats st;
   logic_network_synthesis_params ps;
-  ps.verbose = true;
+  ps.verbose = false;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
   write_unicode(rev);
@@ -781,7 +780,7 @@ TEST_CASE("min depth synthesis XAG-small ", "[mindepth5]")
 
   logic_network_synthesis_stats st;
   logic_network_synthesis_params ps;
-  ps.verbose=true;
+  ps.verbose=false;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
   auto tt_xag = simulate<kitty::static_truth_table<4>>( xag );
@@ -821,7 +820,7 @@ TEST_CASE("min depth synthesis parity buffer", "[mindepth6]")
 
   logic_network_synthesis_stats st;
   logic_network_synthesis_params ps;
-  ps.verbose=true;
+  ps.verbose=false;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
   auto tt_xag = simulate<kitty::static_truth_table<4>>( xag );

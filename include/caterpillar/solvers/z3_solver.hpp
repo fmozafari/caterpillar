@@ -17,6 +17,7 @@
 #include <type_traits>
 
 #include <mockturtle/networks/klut.hpp>
+#include <mockturtle/generators/sorting.hpp>
 #include <caterpillar/details/utils.hpp>
 
 namespace caterpillar
@@ -39,13 +40,31 @@ class z3_pebble_solver
     expr_vector a;
 	};
 
+	/* sorts a vector expression using a sorting network based on insertion sort */
+	expr_vector sorting_net( std::vector<expr>& vars)
+	{ 
+		expr_vector net (ctx);
+		insertion_sorting_network(vars.size(), [&vars](int i, int j)
+		{
+			expr minvar = (vars[i] && vars[j]);
+			expr maxvar = (vars[i] || vars[j]);
+
+			vars[i] = maxvar;
+			vars[j] = minvar;
+		});
+		for(auto v : vars)
+		{
+			net.push_back(v);
+		}
+		return net;
+	}
 
 public:
 
 	using node = node<Ntk>;
 	using result = z3::check_result;
 
-	z3_pebble_solver(const Ntk& net, const int& pebbles, const int& max_conflicts = 0, const int& max_weight = 0)
+	z3_pebble_solver(const Ntk& net, const int& pebbles, const int& max_conflicts = 0, const uint& max_weight = 0)
 	:_net(net), _pebbles(pebbles), _max_weight(max_weight), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
 	{
 		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
@@ -131,13 +150,14 @@ public:
 		current = next;
 	}
 
-	expr_vector weight_expr()
+	std::vector<expr> weight_expr()
 	{
-		expr_vector clause (ctx);
+		std::vector<expr> clause;
 		for (uint32_t k=0; k<num_steps+1; k++)
 		{
 			for (uint32_t i=0; i<current.s.size(); i++)
 			{
+
 				for (uint32_t r=0; r<_net.get_weight(var_to_node(i)); r++)
 				{
 					clause.push_back(ctx.bool_const(fmt::format("a_{}_{}", k, i).c_str()));
@@ -151,7 +171,6 @@ public:
 	{
 		
 		slv.push();
-
 
 		/* add final clauses */
 		for (auto var=0u ; var<next.s.size(); var++)
@@ -169,7 +188,15 @@ public:
 		/* add weight clause */
 		if constexpr ( has_get_weight_v<Ntk> )
 		{
-			if(_max_weight != 0) slv.add(atmost(weight_expr(), _max_weight));
+			if(_max_weight != 0) 
+			{
+				std::vector<expr> we = weight_expr();
+				if (_max_weight < we.size())
+				{
+					expr_vector net = sorting_net(we);
+					slv.add(!net[_max_weight]);
+				}
+			}
 		}
 
 		/* check result (drop final clauses if unsat)*/
@@ -281,7 +308,7 @@ private:
 	std::vector<uint32_t> o_nodes;
 
 	const int _pebbles;
-	const int _max_weight;
+	const uint _max_weight;
 
 	context ctx;
 	solver slv;
