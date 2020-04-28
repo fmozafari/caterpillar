@@ -29,16 +29,19 @@ struct pebbling_mapping_strategy_params
   uint32_t max_weight{0u};
 
   /*! \brief Conflict limit for the SAT solver (0 means no limit). */
-  uint32_t conflict_limit{0u};
+  uint32_t conflict_limit{100000u};
 
   /*! \brief Timeout for the iterative quests. */
   uint32_t timeout{180};
 
   /*! \brief Increment pebble numbers, if a failure occurs. */
-  bool increment_on_failure{false};
+  bool increment_pebbles_on_failure{false};
 
   /*! \brief Decrement pebble numbers, if satisfiable. */
-  bool decrement_on_success{false};
+  bool decrement_pebbles_on_success{false};
+
+  /*! \brief Decrement max weight, if satisfiable. */
+  bool decrement_weight_on_success{false};
 
 };
 
@@ -48,15 +51,17 @@ using Steps = std::vector<std::pair<typename Ntk::node, mapping_strategy_action>
 template <typename Solver, typename Ntk>
 inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = {})
 {
-
-  assert( !ps.decrement_on_success || !ps.increment_on_failure );
+  assert( !ps.decrement_pebbles_on_success || !ps.decrement_weight_on_success);
+  assert( !ps.decrement_pebbles_on_success || !ps.increment_pebbles_on_failure );
+  assert( !ps.decrement_weight_on_success || !ps.increment_pebbles_on_failure );
 
   auto limit = ps.pebble_limit;
+  auto weight = ps.max_weight;
   
   Steps<Ntk> steps;
   while ( true )
   {
-    Solver solver( ntk, limit, ps.conflict_limit, ps.max_weight );
+    Solver solver( ntk, limit, ps.conflict_limit, weight );
     typename Solver::result result;
 
     solver.init();
@@ -81,13 +86,11 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
 
     if ( result == solver.unknown() || result == solver.unsat() )
     {
-      if ( ps.increment_on_failure )
+      if ( ps.increment_pebbles_on_failure )
       {
         limit++;
         continue;
       }
-      else if ( !ps.decrement_on_success )
-        return steps;
     }
     else if ( result == solver.sat() )
     {
@@ -99,9 +102,14 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
       #endif
 
       steps = solver.extract_result();
-      if ( ps.decrement_on_success && limit > 1)
+      if ( ps.decrement_pebbles_on_success && limit > 1)
       {
         limit--;
+        continue;
+      }
+      if ( ps.decrement_weight_on_success && weight > ntk.num_gates())
+      {
+        weight--;
         continue;
       }
     }

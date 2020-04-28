@@ -628,7 +628,7 @@ TEST_CASE("min depth synthesis XAG", "[mindepth]")
   ps.verbose = false;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
-  write_unicode(rev);
+
   auto tt_xag = simulate<kitty::static_truth_table<6>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
   auto tt_ntk = simulate<kitty::static_truth_table<6>>( *ntk );
@@ -666,7 +666,6 @@ TEST_CASE("min depth synthesis XAG-2", "[mindepth]")
   ps.verbose = false;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
-  write_unicode(rev);
 
   auto tt_xag = simulate<kitty::static_truth_table<3>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
@@ -786,7 +785,6 @@ TEST_CASE("min depth synthesis XAG-small ", "[mindepth5]")
   auto tt_xag = simulate<kitty::static_truth_table<4>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
   auto tt_ntk = simulate<kitty::static_truth_table<4>>( *ntk );
-  write_unicode(rev);
   CHECK(tt_xag == tt_ntk);
 }
 
@@ -826,7 +824,6 @@ TEST_CASE("min depth synthesis parity buffer", "[mindepth6]")
   auto tt_xag = simulate<kitty::static_truth_table<4>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
   auto tt_ntk = simulate<kitty::static_truth_table<4>>( *ntk );
-  write_unicode(rev);
   CHECK(tt_xag == tt_ntk);
 }
 
