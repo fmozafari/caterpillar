@@ -107,7 +107,7 @@ TEST_CASE("pebble using weights", "[pebble using weights]")
 	auto n = net.get_node( n1 );
 	pnet.set_weight( n, 5 );
 
-  auto z3_solver = z3_pebble_solver( pnet, 4 , 0, true );
+  auto z3_solver = z3_pebble_solver( pnet, 4 , 0 );
 
   z3_solver.init();
 

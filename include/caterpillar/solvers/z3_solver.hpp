@@ -92,8 +92,8 @@ public:
 	using node = node<Ntk>;
 	using result = z3::check_result;
 
-	z3_pebble_solver(const Ntk& net, const int& pebbles, const int& max_conflicts = 0, bool optimize = false)
-	:_net(net), _pebbles(pebbles), _optimize(optimize), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
+	z3_pebble_solver(const Ntk& net, const int& pebbles, const int& max_conflicts = 0)
+	:_net(net), _pebbles(pebbles), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
 	{
 		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
 		static_assert( has_foreach_po_v<Ntk>, "Ntk does not implement the foreach_po method" );
@@ -226,27 +226,27 @@ public:
 		{
 			slv.pop();
 		}
-		else if (result == sat() && _optimize)
-		{
-			/* get the weight of your solution */
-			auto w = get_weight_from_model();
-			auto w_expr = weight_expr();
-			expr_vector net = sorting_net(w_expr);
-
-			/* use assertions to find a better solution */
-			while(result == sat())
-			{
-				w = w-1;
-				result = slv.check(card_by_sorted_net(net, w));
-			} 
-			result = slv.check(card_by_sorted_net(net, w+1));
-			assert (result == sat());
-
-		}
 
 		return result;
 	}
 
+	void optimize_solution ()
+	{
+		/* get the weight of your solution */
+		auto w = get_weight_from_model();
+		auto w_expr = weight_expr();
+		expr_vector net = sorting_net(w_expr);
+
+		/* use assertions to find a better solution */
+		auto result = sat();
+		while(result == sat())
+		{
+			w = w-1;
+			result = slv.check(card_by_sorted_net(net, w));
+		} 
+		result = slv.check(card_by_sorted_net(net, w+1));
+		assert (result == sat());
+	}
 
 	void print()
 	{
@@ -345,7 +345,6 @@ private:
 	std::vector<uint32_t> o_nodes;
 
 	const int _pebbles;
-	const bool _optimize;
 
 	context ctx;
 	solver slv;
