@@ -104,11 +104,12 @@ TEST_CASE("pebble using weights", "[pebble using weights]")
 
 	pebbling_view<mockturtle::klut_network> pnet( net );
 
-	pnet.set_weight( net.get_node( n1 ), 5 );
+	auto n = net.get_node( n1 );
+	pnet.set_weight( n, 5 );
 
-        auto z3_solver = z3_pebble_solver( pnet, 4 , 19 );
+  auto z3_solver = z3_pebble_solver( pnet, 4 , 0, true );
 
-        z3_solver.init();
+  z3_solver.init();
 
 	do{
 		z3_solver.add_step();

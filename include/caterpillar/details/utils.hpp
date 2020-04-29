@@ -25,7 +25,7 @@ namespace caterpillar::detail
   template<class Ntk>
   static uint32_t resp_num_pis(Ntk const& net)
 	{
-		if constexpr (std::is_same_v<Ntk, mockturtle::klut_network> || std::is_same_v<Ntk, abstract_network>)
+		if constexpr (std::is_base_of_v<mockturtle::klut_network, Ntk> || std::is_same_v<Ntk, abstract_network>)
 			return net.num_pis() + 2;
 		else 
 			return net.num_pis() + 1;

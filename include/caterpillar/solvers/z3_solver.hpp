@@ -40,6 +40,13 @@ class z3_pebble_solver
     expr_vector a;
 	};
 
+	expr_vector card_by_sorted_net (expr_vector const& net, uint const w)
+	{
+		expr_vector card_cnst (ctx);
+		card_cnst.push_back(!net[w]);
+		return card_cnst;
+	}
+
 	/* sorts a vector expression using a sorting network based on insertion sort */
 	expr_vector sorting_net( std::vector<expr>& vars)
 	{ 
@@ -59,13 +66,34 @@ class z3_pebble_solver
 		return net;
 	}
 
+	uint get_weight_from_model()
+	{
+		auto m = slv.get_model();
+		auto w = 0u;
+		for(uint32_t n=0; n< current.s.size(); n++)
+		{
+			for(uint32_t k =0; k< num_steps+1; k++)
+			{
+				auto a_var = m.eval(ctx.bool_const(fmt::format("a_{}_{}", k, n).c_str()));
+				if (a_var.is_true()) 
+				{
+					if constexpr (has_get_weight_v<Ntk>)
+						w += _net.get_weight(var_to_node(n));
+					else 
+						w++;
+				}
+			}
+		}
+		return w;
+	}
+
 public:
 
 	using node = node<Ntk>;
 	using result = z3::check_result;
 
-	z3_pebble_solver(const Ntk& net, const int& pebbles, const int& max_conflicts = 0, const uint& max_weight = 0)
-	:_net(net), _pebbles(pebbles), _max_weight(max_weight), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
+	z3_pebble_solver(const Ntk& net, const int& pebbles, const int& max_conflicts = 0, bool optimize = false)
+	:_net(net), _pebbles(pebbles), _optimize(optimize), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
 	{
 		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
 		static_assert( has_foreach_po_v<Ntk>, "Ntk does not implement the foreach_po method" );
@@ -157,11 +185,15 @@ public:
 		{
 			for (uint32_t i=0; i<current.s.size(); i++)
 			{
-
-				for (uint32_t r=0; r<_net.get_weight(var_to_node(i)); r++)
+				if constexpr (has_get_weight_v<Ntk>)
 				{
-					clause.push_back(ctx.bool_const(fmt::format("a_{}_{}", k, i).c_str()));
+					for (uint32_t r=0; r<_net.get_weight(var_to_node(i)); r++)
+					{
+						clause.push_back(ctx.bool_const(fmt::format("a_{}_{}", k, i).c_str()));
+					}
 				}
+				else 
+					clause.push_back(ctx.bool_const(fmt::format("a_{}_{}", k, i).c_str()));		
 			}
 		}
 		return clause;
@@ -185,25 +217,31 @@ public:
 			}
 		}
 
-		/* add weight clause */
-		if constexpr ( has_get_weight_v<Ntk> )
-		{
-			if(_max_weight != 0) 
-			{
-				std::vector<expr> we = weight_expr();
-				if (_max_weight < we.size())
-				{
-					expr_vector net = sorting_net(we);
-					slv.add(!net[_max_weight]);
-				}
-			}
-		}
 
 		/* check result (drop final clauses if unsat)*/
 		auto result = slv.check();
+
+		
 		if (result == unsat())
 		{
 			slv.pop();
+		}
+		else if (result == sat() && _optimize)
+		{
+			/* get the weight of your solution */
+			auto w = get_weight_from_model();
+			auto w_expr = weight_expr();
+			expr_vector net = sorting_net(w_expr);
+
+			/* use assertions to find a better solution */
+			while(result == sat())
+			{
+				w = w-1;
+				result = slv.check(card_by_sorted_net(net, w));
+			} 
+			result = slv.check(card_by_sorted_net(net, w+1));
+			assert (result == sat());
+
 		}
 
 		return result;
@@ -240,15 +278,14 @@ public:
 				if constexpr ( has_get_weight_v<Ntk> )
 				{	
 					
-					if (_max_weight !=0)
+					
+					if (a_var.is_true()) 
 					{
-						if (a_var.is_true()) 
-						{
-							w += _net.get_weight(var_to_node(n));
-							std::cout << "y" << "+" << _net.get_weight(var_to_node(n)) << " " ;
-						}
-						else std::cout << "n" << "+0 ";
+						w += _net.get_weight(var_to_node(n));
+						std::cout << "y" << "+" << _net.get_weight(var_to_node(n)) << " " ;
 					}
+					else std::cout << "n" << "+0 ";
+					
 				}
 				else
 				{
@@ -308,7 +345,7 @@ private:
 	std::vector<uint32_t> o_nodes;
 
 	const int _pebbles;
-	const uint _max_weight;
+	const bool _optimize;
 
 	context ctx;
 	solver slv;

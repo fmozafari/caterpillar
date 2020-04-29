@@ -76,12 +76,12 @@ public:
 
   uint32_t get_weight (const node n) const
   {
-    return _weights[this->node_to_index( n - detail::resp_num_pis(*this) )];
+    return _weights[this->node_to_index( n ) - detail::resp_num_pis(*this) ];
   }
 
   void set_weight (const node n, uint32_t w)
   {
-    _weights[this->node_to_index( n - detail::resp_num_pis(*this) )] = w;
+    _weights[this->node_to_index( n ) - detail::resp_num_pis(*this)] = w;
   }
 
   std::vector<node> get_parents( node const& n) const

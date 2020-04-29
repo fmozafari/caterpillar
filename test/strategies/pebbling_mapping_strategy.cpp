@@ -116,7 +116,7 @@ TEST_CASE("pebble xag using weighted nodes", "[peb. xag with weights]")
   /* set up pebbles and weight limits */
   pebbling_mapping_strategy_params ps;
   ps.pebble_limit = 4;
-  ps.max_weight = 17;
+  ps.optimize_weight = true;
 
   weighted_pebbling_mapping_strategy<peb_xag_t> strategy (ps);
 

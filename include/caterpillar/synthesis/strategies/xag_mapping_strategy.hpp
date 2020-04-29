@@ -408,7 +408,7 @@ public:
     
 
     if(ps.progress) std::cout << "[i]  Generate box network... \n";
-    auto box_ntk = build_box_network(xag, ps.max_weight != 0);
+    auto box_ntk = build_box_network(xag, ps.optimize_weight);
 
     store_steps = pebble<solver_t, abstract_network> (box_ntk, ps);
 

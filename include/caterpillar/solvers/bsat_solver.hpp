@@ -30,7 +30,7 @@ public:
   using Steps = std::vector<std::pair<mockturtle::node<Network>, mapping_strategy_action>>;
   using result = percy::synth_result;
 
-  bsat_pebble_solver( Network const& net, uint32_t pebbles, uint32_t conflict_limit = 0, uint32_t weight = 0)
+  bsat_pebble_solver( Network const& net, uint32_t pebbles, uint32_t conflict_limit = 0, bool optimize = false)
       : index_to_gate( net.num_gates() ),
         gate_to_index( net ),
         _net( net ),
@@ -38,7 +38,7 @@ public:
         _nr_gates( net.num_gates()),
         conflict_limit(conflict_limit)
   {
-    (void) weight;
+    (void) optimize;
     net.foreach_gate( [&]( auto a, auto i ) {
       gate_to_index[a] = i;
       index_to_gate[i] = a;

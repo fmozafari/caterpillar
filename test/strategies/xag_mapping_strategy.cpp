@@ -578,7 +578,7 @@ TEST_CASE("pebbling XAG with weights", "[minweight]")
 
   pebbling_mapping_strategy_params pss;
   pss.pebble_limit = 4;
-  pss.max_weight = 16;
+  pss.optimize_weight = true;
   pss.verbose = false;
   xag_pebbling_mapping_strategy strategy (pss);
   netlist<stg_gate> rev;
