@@ -348,7 +348,6 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
     std::unordered_map<node_t, abstract_network::signal> xag_to_box;
     
 
-
     xag.foreach_pi([&] (auto pi)
     {
       xag_to_box[pi] = box_ntk.create_pi(); 
@@ -363,18 +362,22 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
       {
         /* collect all the input signals of the box */
         std::vector<abstract_network::signal> box_ins;
+        boost::dynamic_bitset<> visited (xag.size());
 
         auto cones = get_cones(  node, xag, fi );
+        auto tot_leaves = cones[0].leaves.size() + cones[1].leaves.size();
         for( auto c : cones)
         {
           for (auto l : c.leaves)
           {
-            box_ins.push_back(xag_to_box[l]);
+            if(!visited[l])
+              box_ins.push_back(xag_to_box[l]);
+            visited.set(l);
           }
         }
         
         
-        auto box_node_s = use_w ? box_ntk.create_node(box_ins, (int)box_ins.size()/2) : box_ntk.create_node(box_ins);
+        auto box_node_s = use_w ? box_ntk.create_node(box_ins, (int)tot_leaves/2) : box_ntk.create_node(box_ins);
         auto box_node = box_ntk.get_node(box_node_s);
 
         xag_to_box[node] = box_node_s;
