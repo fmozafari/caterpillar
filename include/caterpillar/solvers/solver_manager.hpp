@@ -49,6 +49,8 @@ template <typename Solver, typename Ntk>
 inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = {})
 {
   assert( !ps.decrement_pebbles_on_success || !ps.increment_pebbles_on_failure );
+  assert( !ps.decrement_pebbles_on_success || !ps.optimize_weight );
+  assert( !ps.increment_pebbles_on_failure || !ps.optimize_weight );
 
   auto limit = ps.pebble_limit;
   
@@ -75,6 +77,7 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
 
       solver.add_step();
       result = solver.solve(); 
+
     } while ( result == solver.unsat() && 
         duration_cast<seconds>(high_resolution_clock::now() - start).count() <= ps.timeout);
 
@@ -88,26 +91,28 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
     }
     else if ( result == solver.sat() )
     {
+      #ifdef USE_Z3
+             
+      if(ps.optimize_weight)
+      {
+        if constexpr (std::is_same_v<Solver, z3_pebble_solver<Ntk>>)
+        { 
+          solver.optimize_solution();
+        }
+      }
+
+      #endif
+
+      steps = solver.extract_result();
+
       if ( ps.decrement_pebbles_on_success && limit > 1)
       {
         limit--;
         continue;
       }
 
-      #ifdef USE_Z3
-      if constexpr (std::is_same_v<Solver, z3_pebble_solver<Ntk>>)
-      {        
-        if(ps.optimize_weight)
-        {
-          solver.optimize_solution();
-        }
-        if(ps.verbose) solver.print();
-
-      }
-      #endif
     }
 
-    steps = solver.extract_result();
     return steps;
   }
 
