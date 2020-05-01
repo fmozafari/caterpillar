@@ -57,7 +57,7 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
   Steps<Ntk> steps;
   while ( true )
   {
-    Solver solver( ntk, limit, ps.conflict_limit);
+    Solver solver( ntk, limit, ps.conflict_limit, ps.timeout);
     typename Solver::result result;
 
     solver.init();

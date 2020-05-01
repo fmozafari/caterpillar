@@ -92,15 +92,16 @@ public:
 	using node = node<Ntk>;
 	using result = z3::check_result;
 
-	z3_pebble_solver(const Ntk& net, const int& pebbles, const int& max_conflicts = 0)
+	z3_pebble_solver(const Ntk& net, const int& pebbles, const uint& max_conflicts = 0u, const uint& timeout = 0u)
 	:_net(net), _pebbles(pebbles), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
 	{
 		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
 		static_assert( has_foreach_po_v<Ntk>, "Ntk does not implement the foreach_po method" );
 		static_assert( has_foreach_node_v<Ntk>, "Ntk does not implement the foreach_node method" );
 		static_assert( has_foreach_fanin_v<Ntk>, "Ntk does not implement the foreach_fanin method" );
-
-		ctx.set( "max_conflicts", max_conflicts );
+		
+		if (max_conflicts != 0 )slv.set( "max_conflicts", max_conflicts );
+		if (timeout != 0 ) slv.set( "timeout", timeout );
 
 		_net.foreach_po([&](auto po_sign)
 		{
@@ -232,6 +233,7 @@ public:
 
 	void optimize_solution ()
 	{
+
 		/* get the weight of your solution */
 		auto w = get_weight_from_model();
 		auto w_expr = weight_expr();
