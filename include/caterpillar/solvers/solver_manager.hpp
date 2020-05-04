@@ -28,8 +28,8 @@ struct pebbling_mapping_strategy_params
   /*! \brief Conflict limit for the SAT solver (0 means no limit). */
   uint32_t conflict_limit{10000u};
 
-  /*! \brief Timeout for the iterative quests. */
-  uint32_t timeout{180};
+  /*! \brief Timeout for the iterative quests in milliseconds. */
+  uint32_t timeout{30000};
 
   /*! \brief Increment pebble numbers, if a failure occurs. */
   bool increment_pebbles_on_failure{false};
@@ -79,7 +79,7 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
       result = solver.solve(); 
 
     } while ( result == solver.unsat() && 
-        duration_cast<seconds>(high_resolution_clock::now() - start).count() <= ps.timeout);
+        duration_cast<milliseconds>(high_resolution_clock::now() - start).count() <= ps.timeout);
 
     if ( result == solver.unknown() || result == solver.unsat() )
     {
@@ -97,7 +97,8 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
       {
         if constexpr (std::is_same_v<Solver, z3_pebble_solver<Ntk>>)
         { 
-          solver.optimize_solution();
+          std::cout << "[i] optimizing solution\n"; 
+          solver.optimize_solution_exact();
         }
       }
 
