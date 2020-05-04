@@ -24,11 +24,7 @@ namespace caterpillar
   {
     uint32_t operator()( Ntk const& ntk, typename Ntk::node const& node ) const
     {
-      std::vector<typename Ntk::node> drivers;
-      ntk.foreach_po( [&] (auto s)
-      {
-        drivers.push_back(ntk.get_node(s));
-      });
+
       if(ntk.is_and(node))
         return 1u;
       else return 0u;
