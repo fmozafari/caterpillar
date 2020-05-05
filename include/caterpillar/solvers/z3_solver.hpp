@@ -43,7 +43,9 @@ class z3_pebble_solver
 	expr_vector card_by_sorted_net (expr_vector const& net, uint const w)
 	{
 		expr_vector card_cnst (ctx);
-		card_cnst.push_back(!net[w]);
+		for( auto i = w; i <net.size(); i++)
+			card_cnst.push_back(!net[i]);
+
 		return card_cnst;
 	}
 
@@ -91,24 +93,6 @@ public:
 
 	using node = node<Ntk>;
 	using result = z3::check_result;
-
-	z3_pebble_solver(const Ntk& net, const int& pebbles, const uint& max_conflicts = 0u, const uint& timeout = 0u)
-	:_net(net), _pebbles(pebbles), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
-	{
-		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
-		static_assert( has_foreach_po_v<Ntk>, "Ntk does not implement the foreach_po method" );
-		static_assert( has_foreach_node_v<Ntk>, "Ntk does not implement the foreach_node method" );
-		static_assert( has_foreach_fanin_v<Ntk>, "Ntk does not implement the foreach_fanin method" );
-		
-		if (max_conflicts != 0 )slv.set( "max_conflicts", max_conflicts );
-		if (timeout != 0 ) slv.set( "timeout", timeout );
-
-		_net.foreach_po([&](auto po_sign)
-		{
-			o_nodes.push_back(_net.get_node(po_sign));
-		});
-
-	}
 
 	uint32_t node_to_var( node n )
 	{
@@ -179,9 +163,9 @@ public:
 		current = next;
 	}
 
-	std::vector<expr> weight_expr()
+	expr_vector weight_expr()
 	{
-		std::vector<expr> clause;
+		expr_vector clause (ctx);
 		for (uint32_t k=0; k<num_steps+1; k++)
 		{
 			for (uint32_t i=0; i<current.s.size(); i++)
@@ -218,7 +202,6 @@ public:
 			}
 		}
 
-
 		/* check result (drop final clauses if unsat)*/
 		auto result = slv.check();
 
@@ -234,20 +217,30 @@ public:
 	void optimize_solution ()
 	{
 
-		/* get the weight of your solution */
-		auto w = get_weight_from_model();
-		auto w_expr = weight_expr();
-		expr_vector net = sorting_net(w_expr);
-
-		/* use assertions to find a better solution */
-		auto result = sat();
-		while(result == sat())
+		expr_vector w_expr = weight_expr();
+		uint last_sat_w = 0;
+		while(true)
 		{
-			w = w-1;
-			result = slv.check(card_by_sorted_net(net, w));
-		} 
-		result = slv.check(card_by_sorted_net(net, w+1));
-		assert (result == sat());
+			slv.push();	
+			uint w = get_weight_from_model();
+			slv.add(atmost(w_expr, w-1));
+			
+			auto res = slv.check();
+			std::cout << res << "\n";
+			if(res == sat())
+			{
+				slv.pop();
+				last_sat_w = w-1;
+			}
+			if(res != sat())
+			{
+				slv.pop();	
+				break;
+			}
+		}
+		slv.add(atmost(w_expr, last_sat_w));
+		auto s = slv.check();
+		assert(s == z3::check_result::sat);
 	}
 
 	void print()
@@ -341,6 +334,23 @@ public:
 		return steps;
 	}
 
+	z3_pebble_solver(const Ntk& net, const int& pebbles, const uint& max_conflicts = 0u, const uint& timeout = 0u)
+	:_net(net), _pebbles(pebbles), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
+	{
+		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
+		static_assert( has_foreach_po_v<Ntk>, "Ntk does not implement the foreach_po method" );
+		static_assert( has_foreach_node_v<Ntk>, "Ntk does not implement the foreach_node method" );
+		static_assert( has_foreach_fanin_v<Ntk>, "Ntk does not implement the foreach_fanin method" );
+
+		if (max_conflicts != 0 )slv.set( "max_conflicts", max_conflicts );
+		if (timeout != 0 ) slv.set( "timeout", timeout );
+
+		_net.foreach_po([&](auto po_sign)
+		{
+			o_nodes.push_back(_net.get_node(po_sign));
+		});
+
+	}
 
 private:
 	const Ntk _net;
