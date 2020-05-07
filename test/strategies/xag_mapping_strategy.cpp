@@ -625,14 +625,14 @@ TEST_CASE("min depth synthesis XAG", "[mindepth]")
 
   logic_network_synthesis_stats st;
   logic_network_synthesis_params ps;
-  ps.verbose = false;
+  ps.verbose = true;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
 
   auto tt_xag = simulate<kitty::static_truth_table<6>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
   auto tt_ntk = simulate<kitty::static_truth_table<6>>( *ntk );
-
+  write_unicode(rev);
   CHECK(tt_xag == tt_ntk);
 }
 

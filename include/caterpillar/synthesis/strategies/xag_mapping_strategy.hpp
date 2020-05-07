@@ -28,24 +28,13 @@ using namespace std::chrono;
 
 namespace caterpillar
 {
-
-using node_t = mockturtle::xag_network::node;
+using xag_network = mockturtle::xag_network;
+using node_t = xag_network::node;
 using steps_xag_t = std::vector<std::pair<node_t, mapping_strategy_action>>;
 #ifdef USE_Z3
 using steps_abs_t = std::vector<std::pair<abstract_network::node, mapping_strategy_action>>;
 using SolverType = z3_pebble_solver<abstract_network>;
 #endif
-
-struct action_sets
-{
-  node_t node;
-  std::vector<uint32_t> target;
-  std::vector<uint32_t> leaves;
-  std::vector<uint32_t> copies = {};
-
-  action_sets( node_t node, std::vector<uint32_t> leaves, std::vector<uint32_t> target = {} )
-      : node(node), target(target), leaves(leaves) {};
-};
 
 
 inline std::vector<uint32_t> sym_diff(std::vector<uint32_t> first, std::vector<uint32_t> second)
@@ -78,7 +67,7 @@ inline bool is_included(std::vector<uint32_t> first, std::vector<uint32_t> secon
 }
 
 
-inline void update_fi( node_t node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>>& fi, std::vector<node_t> const& drivers )
+inline void update_fi( node_t node, xag_network const& xag, std::vector<std::vector<uint32_t>>& fi, std::vector<node_t> const& drivers )
 {
 
   if ( xag.is_and( node ) || xag.is_pi(node) || (std::find(drivers.begin(), drivers.end(), node) != drivers.end()))
@@ -99,7 +88,7 @@ inline void update_fi( node_t node, mockturtle::xag_network const& xag, std::vec
 }
 
 
-static inline  std::vector<std::vector<uint32_t>> get_fi (mockturtle::xag_network const& xag, std::vector<node_t> const& drivers )
+static inline  std::vector<std::vector<uint32_t>> get_fi (xag_network const& xag, std::vector<node_t> const& drivers )
 {
   std::vector<std::vector<uint32_t>> fi (xag.size());
   xag.foreach_node( [&]( auto n ) {
@@ -108,7 +97,7 @@ static inline  std::vector<std::vector<uint32_t>> get_fi (mockturtle::xag_networ
   return fi;
 }
 
-inline  std::vector<action_sets> get_cones( node_t node, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
+inline  std::vector<action_sets> get_cones( node_t node, xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
 {
   std::vector<action_sets> cones; 
 
@@ -240,7 +229,7 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<action_sets> cones
 
 static inline std::vector<std::vector<node_t>> get_levels( xag_network const& xag_t, std::vector<node_t> const& drivers)
 {
-  depth_view<xag_network, xag_depth_cost<xag_network>> xag {xag_t};
+  mockturtle::depth_view<xag_network, xag_depth_cost<xag_network>> xag {xag_t};
 
   std::vector<std::vector<node_t>>levels (xag.depth());
                                                                  
@@ -264,11 +253,11 @@ static inline std::vector<std::vector<node_t>> get_levels( xag_network const& xa
     Details can be found in :cite:`MSC19`.
   \endverbatim
 */
-class xag_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
+class xag_mapping_strategy : public mapping_strategy<xag_network>
 {
 
 public:
-  bool compute_steps( mockturtle::xag_network const& ntk ) override
+  bool compute_steps( xag_network const& ntk ) override
   {
     mockturtle::topo_view xag {ntk};
 
@@ -321,7 +310,7 @@ public:
     Pebbling is played on the abstract graph.
   \endverbatim
 */
-class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
+class xag_pebbling_mapping_strategy : public mapping_strategy<xag_network>
 {
  
   steps_xag_t get_box_steps(steps_abs_t const& store_steps)
@@ -341,7 +330,7 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<mockturtle::xag_ne
     return xag_steps;
   }
 
-  abstract_network build_box_network(mockturtle::xag_network const& xag, bool use_w = false)
+  abstract_network build_box_network(xag_network const& xag, bool use_w = false)
   {
     abstract_network box_ntk;
 
@@ -403,7 +392,7 @@ public:
   xag_pebbling_mapping_strategy( pebbling_mapping_strategy_params const& ps = {} )
   : ps( ps ) {}
 
-  bool compute_steps( mockturtle::xag_network const& ntk ) override
+  bool compute_steps( xag_network const& ntk ) override
   {
     using solver_t = z3_pebble_solver<abstract_network>;
     mockturtle::topo_view xag {ntk};
@@ -436,7 +425,7 @@ public:
     Every level uses some extra-qubits to copy AND inputs.
   \endverbatim
 */
-class xag_low_depth_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
+class xag_low_depth_mapping_strategy : public mapping_strategy<xag_network>
 {
   void eval_copies(std::vector<action_sets>& cones, boost::dynamic_bitset<>& visited)
   {
@@ -477,7 +466,7 @@ class xag_low_depth_mapping_strategy : public mapping_strategy<mockturtle::xag_n
 
 public: 
   
-  bool compute_steps( mockturtle::xag_network const& ntk ) override
+  bool compute_steps( xag_network const& ntk ) override
   {
     // the strategy proceeds in topological order and level by level
     mockturtle::topo_view xag {ntk};
@@ -494,11 +483,11 @@ public:
     for(auto lvl : levels){ if(lvl.size() != 0)
     {
       /* store two action sets for each node in the level */
-      std::map<node_t, std::vector<action_sets>> node_and_action;
+      std::vector<std::pair<uint32_t, std::vector<action_sets>>> node_and_action;      
+      std::vector<std::pair<uint32_t, std::vector<action_sets>>> to_be_uncomputed;
 
-      /* keeps track of the visited children of the nodes in the level */
+
       boost::dynamic_bitset<> visited (xag.size());
-
       for(auto n : lvl)
       {
         auto cones = get_cones(n, xag, fi);
@@ -507,33 +496,18 @@ public:
           /* modifies cones.leaves and cones.copies according to visited */
           eval_copies(cones, visited);
         }
-
-        node_and_action[n] = cones;
+        node_and_action.push_back({n, cones});
       }
- 
-      /* all the copy operations are inserted */
-      auto cp = gen_copies(lvl, node_and_action);
-      it = steps().insert(it, cp.begin(), cp.end());
-      it = it + cp.size();  
-     
-      /* all the node operations are inserted */
-      /* uncopies are done after computing each node */
-      for (auto n : lvl)
+
+      it = steps().insert(it, {lvl[0], compute_level_action{node_and_action}});
+      it = it + 1;
+      
+      for(auto node : node_and_action)
       {
-        auto cc = gen_steps(n, node_and_action[n], true);
-
-        it = steps().insert(it, cc.begin(), cc.end());
-
-        it = it + cc.size();        
-
-        /* non output nodes are uncomputed */
-        /* uncomputing does not need copies as it does not require T gates */
-        if ( std::find( drivers.begin(), drivers.end(), n ) == drivers.end()  )
-        { 
-          auto uc = gen_steps( n , node_and_action[n], false);
-          it = steps().insert( it, uc.begin(), uc.end() );
-        }
+        if(std::find(drivers.begin(), drivers.end(), node.first) == drivers.end())
+        to_be_uncomputed.push_back(node);
       }
+      it = steps().insert(it, {lvl[0], uncompute_level_action{to_be_uncomputed}});
       
     }
     
@@ -550,12 +524,12 @@ public:
     It performs as many AND operations in parallel as possible.
   \endverbatim
 */
-class xag_depth_fit_mapping_strategy : public mapping_strategy<mockturtle::xag_network>
+class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
 {
   std::unordered_map<node_t, std::vector<action_sets>> node_to_cones;
 
   //checks compatibility between nodes in one level and builds the graph
-  detail::Graph <node_t> get_compatibility_graph( std::vector<node_t> const& lvl, mockturtle::xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
+  detail::Graph <node_t> get_compatibility_graph( std::vector<node_t> const& lvl, xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
   {
     detail::Graph<node_t> graph;
 
@@ -601,7 +575,7 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<mockturtle::xag_n
 
 public: 
   
-  bool compute_steps( mockturtle::xag_network const& ntk ) override
+  bool compute_steps( xag_network const& ntk ) override
   {
     // the strategy proceeds in topological order
     mockturtle::topo_view xag {ntk};

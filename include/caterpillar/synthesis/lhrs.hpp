@@ -62,6 +62,7 @@ namespace detail
 template<class QuantumNetwork, class LogicNetwork, class SingleTargetGateSynthesisFn>
 class logic_network_synthesis_impl
 {
+  using node_t = typename LogicNetwork::node;
 public:
   logic_network_synthesis_impl( QuantumNetwork& qnet, LogicNetwork const& ntk,
                                 mapping_strategy<LogicNetwork>& strategy,
@@ -230,6 +231,12 @@ public:
                 {  
                   compute_node_inplace( node, t );
                 }
+              },
+              [&] (compute_level_action const& action){
+                compute_level(action.node_to_cones);
+              },
+              [&] (uncompute_level_action const& action){
+                uncompute_level(action.node_to_cones);
               }},
           action );
     } );
@@ -672,6 +679,159 @@ private:
     if ( inv )
       qnet.add_gate( tweedledum::gate::pauli_x, t );
   }
+
+  void compute_level(std::vector<std::pair<uint32_t, std::vector<action_sets>>> const& node_to_cones)
+  {
+    //for each node in a level
+      //insert copies on a requested ancillae
+    std::map<node_t, std::vector<uint32_t>> id_to_tcp;
+    for(auto node : node_to_cones)
+    {      
+      std::vector<uint32_t> roots_targets (2);
+      for(auto i = 0; i < 2 ; i++)
+      {
+        auto cone = node.second[i];
+        if(cone.copies.empty())
+        {
+          if(cone.leaves.size() == 1)
+          {
+            roots_targets[i] = node_to_qubit[cone.node];
+          }
+          else
+          {
+            roots_targets[i] = cone.target.empty() ? request_ancilla() : node_to_qubit[cone.target[0]].top();
+          }
+          
+        }
+        else
+        {
+          for (auto c : cone.copies)
+          {
+            auto tcp = request_ancilla();
+            auto qc = node_to_qubit[c].top();
+            qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( qc ), tcp );
+            roots_targets[i] = tcp;
+          }
+        }
+      }
+      id_to_tcp[node.first] = roots_targets;
+    }
+
+    for(auto node : node_to_cones)
+    {
+      auto id = node.first;
+      
+      for(auto i = 0; i < 2 ; i++)
+      {
+        auto cone = node.second[i];
+        std::vector<node_t> rem_leaves;
+        std::set_symmetric_difference( 
+                  cone.leaves.begin(), cone.leaves.end(), cone.copies.begin(), cone.copies.end(), 
+                  std::back_inserter(rem_leaves) );
+        
+        auto root = cone.node;
+        auto tcp = id_to_tcp[id][i];
+        for( auto l : rem_leaves )
+        {
+          auto lq = node_to_qubit[l].top();
+          if((lq != tcp) && (l != root))
+          {
+            qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( lq ), tcp );
+          }
+        }
+        node_to_qubit[root].push(tcp);
+
+      }
+
+      auto target = request_ancilla();
+      compute_node(id, target );
+      node_to_qubit[id].push(target);
+
+      for(auto i = 0; i < 2 ; i++)
+      {
+        auto cone = node.second[i];
+        std::vector<uint32_t> rem_leaves;
+        std::set_symmetric_difference( 
+                  cone.leaves.begin(), cone.leaves.end(), cone.copies.begin(), cone.copies.end(), 
+                  std::back_inserter(rem_leaves) );
+        
+        auto root = cone.node;
+        auto tcp = id_to_tcp[id][i];
+        for( auto l : rem_leaves )
+        {
+          auto lq = node_to_qubit[l].top();
+          if((lq != tcp) && (l != root))
+          {
+            qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( lq ), tcp );    
+          }
+        }
+        node_to_qubit[root].pop();
+      }
+    }
+    //remove copies
+    for(auto node : node_to_cones)
+    {      
+      for(auto i = 0; i < 2 ; i++)
+      {
+        auto cone = node.second[i];
+        if(!cone.copies.empty())
+        {
+          for (auto c : cone.copies)
+          {
+            auto tcp = id_to_tcp[node.first][i];
+            auto qc = node_to_qubit[c].top();
+            qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( qc ), tcp );
+          }
+        }
+      }
+    }
+
+  }
+
+  void uncompute_level(std::vector<std::pair<uint32_t, std::vector<action_sets>>> const& node_to_cones)
+  {
+    //for each node in a level
+      //insert copies on a requested ancillae
+
+    for(auto node : node_to_cones)
+    {
+      auto id = node.first;
+      
+      for(auto i = 0; i < 2 ; i++)
+      {
+        auto cone = node.second[i];
+        auto root = cone.node;
+        auto t = cone.target.empty() ? request_ancilla() : cone.target[0];
+        for( auto l : cone.leaves )
+        {
+          auto lq = node_to_qubit[l].top();
+          if((lq != t) && (l != root))
+            qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( lq ), t );
+          node_to_qubit[root].push(t);
+        }
+      }
+
+      auto target = node_to_qubit[id].top();
+      compute_node(id, target );
+      node_to_qubit[id].pop();
+
+      for(auto i = 0; i < 2 ; i++)
+      {
+        auto cone = node.second[i];
+        auto root = cone.node;
+        auto t = node_to_qubit[root].top();
+        for( auto l : cone.leaves )
+        {
+          auto lq = node_to_qubit[l].top();
+          if(lq != t)
+            qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( lq ), t );
+          node_to_qubit[root].pop();
+        }
+      }
+    }
+
+  }
+
 
 private:
   QuantumNetwork& qnet;

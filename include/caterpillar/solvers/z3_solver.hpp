@@ -9,7 +9,7 @@
 
 #include <caterpillar/structures/pebbling_view.hpp>
 #include <caterpillar/structures/abstract_network.hpp>
-#include <caterpillar/synthesis/strategies/action.hpp>
+#include <caterpillar/synthesis/strategies/mapping_strategy.hpp>
 #include <fmt/format.h>
 
 #include <z3++.h>

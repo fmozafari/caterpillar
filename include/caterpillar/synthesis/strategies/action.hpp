@@ -11,9 +11,19 @@
 #include <vector>
 
 #include <kitty/dynamic_truth_table.hpp>
-
 namespace caterpillar
 {
+
+struct action_sets
+{
+  uint32_t node;
+  std::vector<uint32_t> target;
+  std::vector<uint32_t> leaves;
+  std::vector<uint32_t> copies = {};
+
+  action_sets( uint32_t node, std::vector<uint32_t> leaves, std::vector<uint32_t> target = {} )
+      : node(node), target(target), leaves(leaves) {};
+};
 
 struct compute_action
 {
@@ -76,12 +86,24 @@ struct uncompute_oncopies_action
   std::vector<uint32_t> copies;
 };
 
+struct compute_level_action
+{
+  /* data */
+  std::vector<std::pair<uint32_t, std::vector<action_sets>>>  node_to_cones;
+};
+struct uncompute_level_action
+{
+  /* data */
+  std::vector<std::pair<uint32_t, std::vector<action_sets>>> node_to_cones;
+};
+
 
 using mapping_strategy_action = 
   std::variant<compute_action, uncompute_action,
                compute_inplace_action, uncompute_inplace_action, 
                compute_copy_action, uncompute_copy_action, 
-               compute_oncopies_action, uncompute_oncopies_action>;
+               compute_oncopies_action, uncompute_oncopies_action,
+               compute_level_action, uncompute_level_action>;
 
 namespace detail
 {
