@@ -104,7 +104,7 @@ inline  std::vector<action_sets> get_cones( node_t node, xag_network const& xag,
   xag.foreach_fanin( node, [&]( auto si ) {
     auto fanin = xag.get_node( si );
 
-    auto set = action_sets(fanin, fi[xag.node_to_index( fanin )] ) ; 
+    auto set = action_sets(fanin, fi[xag.node_to_index( fanin )], xag.is_complemented(si) ) ; 
     cones.push_back( set ); 
   } );
   assert( cones.size() == 2 );
@@ -124,14 +124,14 @@ inline  std::vector<action_sets> get_cones( node_t node, xag_network const& xag,
   }
   else 
   {
-    if ( is_included(fi[xag.node_to_index(cones[1].node)], fi[xag.node_to_index(cones[0].node)]) )
+    if ( is_included(fi[xag.node_to_index(cones[1].root)], fi[xag.node_to_index(cones[0].root)]) )
       std::reverse(cones.begin(), cones.end());
 
-    auto left = xag.node_to_index(cones[0].node);
-    auto right = xag.node_to_index(cones[1].node);
+    auto left = xag.node_to_index(cones[0].root);
+    auto right = xag.node_to_index(cones[1].root);
 
     /* search a target for first */
-    /* empty if left is included */
+    /* empty if left is included TODO: remove this */
     std::set_difference(fi[left].begin(), fi[left].end(), 
       fi[right].begin(), fi[right].end(), std::inserter(cones[0].target, cones[0].target.begin()));
 
@@ -143,20 +143,20 @@ inline  std::vector<action_sets> get_cones( node_t node, xag_network const& xag,
     if( is_included(fi[left], fi[right] ) )
     {
       /* add the top of the cone to the right */
-      cones[1].target.push_back( cones[0].node ); 
+      cones[1].target.push_back( cones[0].root ); 
       cones[1].leaves = cones[1].target;
 
       /* anything can be chosen as target */ 
       cones[0].target = fi[left];
     }
   }
-  if ( cones[0].leaves.size() == 1 && cones[0].leaves[0] != cones[0].node )
+  if ( cones[0].leaves.size() == 1 && cones[0].leaves[0] != cones[0].root )
   {
-    cones[0].target = cones[0].leaves;
+    cones[0].root = cones[0].leaves[0];
   }
-  if ( cones[1].leaves.size() == 1 && cones[1].leaves[0] != cones[1].node )
+  if ( cones[1].leaves.size() == 1 && cones[1].leaves[0] != cones[1].root )
   {
-    cones[1].target = cones[1].leaves;
+    cones[1].root = cones[1].leaves[0];
   }
 
   return cones;
@@ -170,25 +170,25 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<action_sets> cones
   {
     if(ch.copies.empty() || !compute)
     {
-      if ( (ch.leaves.size()==1) && (ch.leaves[0]!=ch.node) ){
+      if ( (ch.leaves.size()==1) && (ch.leaves[0]!=ch.root) ){
         ch.leaves.erase(ch.leaves.end()-1);
-        comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
+        comp_steps.push_back( {ch.root, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
       }
       else if( ch.leaves.size()>1 )
       {
         if ( !ch.target.empty() )
         {
-          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
+          comp_steps.push_back( {ch.root, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
         }
         else 
         {
-          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt}} );
+          comp_steps.push_back( {ch.root, compute_action{ ch.leaves, std::nullopt}} );
         }
       }
     }
     else 
     {
-      comp_steps.push_back( {ch.node, compute_oncopies_action{ch.leaves, ch.copies}} );
+      comp_steps.push_back( {ch.root, compute_oncopies_action{ch.leaves, ch.copies}} );
     }
 
   }
@@ -208,18 +208,18 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<action_sets> cones
       if (ch.leaves.size() > 1){
         if ( !ch.target.empty() )
         {
-          comp_steps.push_back( {ch.node, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
+          comp_steps.push_back( {ch.root, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
         }
         else 
         {
-          comp_steps.push_back( {ch.node, compute_action{ ch.leaves, std::nullopt}} );
+          comp_steps.push_back( {ch.root, compute_action{ ch.leaves, std::nullopt}} );
         }
       }
     }
     else 
     {
-      comp_steps.push_back( {ch.node, uncompute_oncopies_action{ch.leaves, ch.copies}} );
-      comp_steps.push_back( {ch.node, uncompute_copy_action{ ch.copies}} );
+      comp_steps.push_back( {ch.root, uncompute_oncopies_action{ch.leaves, ch.copies}} );
+      comp_steps.push_back( {ch.root, uncompute_copy_action{ ch.copies}} );
     }
   }
   
@@ -438,13 +438,16 @@ class xag_low_depth_mapping_strategy : public mapping_strategy<xag_network>
         {
           cone.copies.push_back(l);
         }
-        else
+      }
+    }
+    for(auto cone : cones)
+    {
+      for(auto l : cone.leaves )
         {
           visited.set(l);
         }
       }
     }
-  }
 
   steps_xag_t gen_copies(std::vector<node_t> const& lvl, std::map<node_t, std::vector<action_sets>>& node_and_action)
   {
@@ -454,11 +457,11 @@ class xag_low_depth_mapping_strategy : public mapping_strategy<xag_network>
       auto cones = node_and_action[n];
       if(!cones[0].copies.empty())
       {
-        cp_st.push_back({cones[0].node, compute_copy_action{cones[0].copies}});
+        cp_st.push_back({cones[0].root, compute_copy_action{cones[0].copies}});
       }
       if(!cones[1].copies.empty())
       {
-        cp_st.push_back({cones[1].node, compute_copy_action{cones[1].copies}});
+        cp_st.push_back({cones[1].root, compute_copy_action{cones[1].copies}});
       }
     }
     return cp_st;

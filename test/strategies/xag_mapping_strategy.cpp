@@ -578,6 +578,7 @@ TEST_CASE("pebbling XAG with weights", "[minweight]")
 
   pebbling_mapping_strategy_params pss;
   pss.pebble_limit = 4;
+  pss.conflict_limit = 100000;
   pss.optimize_weight = true;
   pss.verbose = false;
   xag_pebbling_mapping_strategy strategy (pss);
@@ -628,11 +629,10 @@ TEST_CASE("min depth synthesis XAG", "[mindepth]")
   ps.verbose = true;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
-
+  write_unicode(rev);
   auto tt_xag = simulate<kitty::static_truth_table<6>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
   auto tt_ntk = simulate<kitty::static_truth_table<6>>( *ntk );
-  write_unicode(rev);
   CHECK(tt_xag == tt_ntk);
 }
 
@@ -821,6 +821,7 @@ TEST_CASE("min depth synthesis parity buffer", "[mindepth6]")
   ps.verbose=false;
 
   logic_network_synthesis(rev, xag, strategy, {}, ps, &st );
+
   auto tt_xag = simulate<kitty::static_truth_table<4>>( xag );
   const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( rev, st.i_indexes, st.o_indexes );
   auto tt_ntk = simulate<kitty::static_truth_table<4>>( *ntk );

@@ -218,23 +218,24 @@ public:
 	{
 
 		expr_vector w_expr = weight_expr();
-		uint last_sat_w = 0;
+		uint last_sat_w = get_weight_from_model();
 		while(true)
 		{
 			slv.push();	
-			uint w = get_weight_from_model();
-			slv.add(atmost(w_expr, w-1));
+			uint w = last_sat_w -1;
+			slv.add(atmost(w_expr, w));
 			
 			auto res = slv.check();
+			slv.pop();
+
 			std::cout << res << "\n";
 			if(res == sat())
 			{
-				slv.pop();
-				last_sat_w = w-1;
+				last_sat_w = w;
+				continue;
 			}
 			if(res != sat())
 			{
-				slv.pop();	
 				break;
 			}
 		}

@@ -34,6 +34,7 @@ struct logic_network_synthesis_params
 {
   /*! \brief Be verbose. */
   bool verbose{false};
+
 };
 
 struct logic_network_synthesis_stats
@@ -113,42 +114,6 @@ public:
                 copies[node].pop();
                 // this would allow reusing qubits but increases the T depth
                 //release_ancilla( t );
-              },
-              [&]( compute_oncopies_action const& action ) {
-                const auto t = copies[node].front();
-
-                if (ps.verbose) 
-                {
-                  fmt::print("[i] compute {} on its copies on qubit {}\n", node, t); 
-                  fmt::print("with leaves {}\n", fmt::join(action.leaves, " "));
-                  fmt::print("and copies {}\n", fmt::join(action.copies, " "));
-
-                }
-                std::vector<uint32_t> rem_leaves;
-                std::set_symmetric_difference( 
-                  action.leaves.begin(), action.leaves.end(), action.copies.begin(), action.copies.end(), 
-                  std::back_inserter(rem_leaves) );
-
-                compute_big_xor( t, rem_leaves);
-                node_to_qubit[node].push( t );
-              },
-              [&]( uncompute_oncopies_action const& action ) {
-                const auto t = node_to_qubit[node].top();
-
-                if (ps.verbose) 
-                {
-                  fmt::print("[i] uncompute {} on its copies from qubit {}\n", node, t); 
-                  fmt::print("with leaves {}\n", fmt::join(action.leaves, " "));
-                  fmt::print("and copies {}\n", fmt::join(action.copies, " "));
-                }
-
-                std::vector<uint32_t> rem_leaves;
-                std::set_symmetric_difference( 
-                  action.leaves.begin(), action.leaves.end(), action.copies.begin(), action.copies.end(), 
-                  std::back_inserter(rem_leaves) );
-
-                compute_big_xor( t, rem_leaves);
-                node_to_qubit[node].pop();
               },
               [&]( compute_action const& action ) {
                 const auto t = request_ancilla();
@@ -236,6 +201,7 @@ public:
                 compute_level(action.node_to_cones);
               },
               [&] (uncompute_level_action const& action){
+                if(!action.node_to_cones.empty())
                 uncompute_level(action.node_to_cones);
               }},
           action );
@@ -682,7 +648,6 @@ private:
 
   void compute_level(std::vector<std::pair<uint32_t, std::vector<action_sets>>> const& node_to_cones)
   {
-    //for each node in a level
       //insert copies on a requested ancillae
     std::map<node_t, std::vector<uint32_t>> id_to_tcp;
     for(auto node : node_to_cones)
@@ -695,7 +660,7 @@ private:
         {
           if(cone.leaves.size() == 1)
           {
-            roots_targets[i] = node_to_qubit[cone.node];
+            roots_targets[i] = node_to_qubit[cone.leaves[0]].top();
           }
           else
           {
@@ -705,68 +670,80 @@ private:
         }
         else
         {
+          auto tcp = request_ancilla();
           for (auto c : cone.copies)
           {
-            auto tcp = request_ancilla();
             auto qc = node_to_qubit[c].top();
             qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( qc ), tcp );
+          }
             roots_targets[i] = tcp;
           }
         }
-      }
       id_to_tcp[node.first] = roots_targets;
     }
 
     for(auto node : node_to_cones)
     {
       auto id = node.first;
+      SetQubits pol_controls; 
       
       for(auto i = 0; i < 2 ; i++)
       {
-        auto cone = node.second[i];
+        auto& cone = node.second[i];
+        auto tcp = id_to_tcp[id][i];
+        pol_controls.emplace_back(tcp, cone.complemented);
+
         std::vector<node_t> rem_leaves;
         std::set_symmetric_difference( 
                   cone.leaves.begin(), cone.leaves.end(), cone.copies.begin(), cone.copies.end(), 
                   std::back_inserter(rem_leaves) );
         
-        auto root = cone.node;
-        auto tcp = id_to_tcp[id][i];
+        
         for( auto l : rem_leaves )
         {
           auto lq = node_to_qubit[l].top();
-          if((lq != tcp) && (l != root))
+          if((lq != tcp))
           {
             qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( lq ), tcp );
           }
         }
-        node_to_qubit[root].push(tcp);
+        node_to_qubit[cone.root].push(tcp);
 
       }
 
       auto target = request_ancilla();
-      compute_node(id, target );
+      if (ntk.is_and(id))
+        compute_and(pol_controls, target );
+      else if (ntk.is_xor(id))
+      {
+        compute_xor(pol_controls[0].index(), pol_controls[1].index(), 
+                    pol_controls[0].is_complemented() != pol_controls[1].is_complemented(), target );
+      }
       node_to_qubit[id].push(target);
 
-      for(auto i = 0; i < 2 ; i++)
+      for(auto i = 1; i >= 0 ; i--)
       {
-        auto cone = node.second[i];
+        auto& cone = node.second[i];
+        auto& tcp = id_to_tcp[id][i];
+
         std::vector<uint32_t> rem_leaves;
         std::set_symmetric_difference( 
                   cone.leaves.begin(), cone.leaves.end(), cone.copies.begin(), cone.copies.end(), 
                   std::back_inserter(rem_leaves) );
         
-        auto root = cone.node;
-        auto tcp = id_to_tcp[id][i];
+
         for( auto l : rem_leaves )
         {
           auto lq = node_to_qubit[l].top();
-          if((lq != tcp) && (l != root))
+          if((lq != tcp))
           {
             qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( lq ), tcp );    
           }
         }
-        node_to_qubit[root].pop();
       }
+      node_to_qubit[node.second[0].root].pop();
+      node_to_qubit[node.second[1].root].pop();
+
     }
     //remove copies
     for(auto node : node_to_cones)
@@ -776,9 +753,10 @@ private:
         auto cone = node.second[i];
         if(!cone.copies.empty())
         {
+          auto tcp = id_to_tcp[node.first][i];
+
           for (auto c : cone.copies)
           {
-            auto tcp = id_to_tcp[node.first][i];
             auto qc = node_to_qubit[c].top();
             qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( qc ), tcp );
           }
@@ -793,40 +771,59 @@ private:
     //for each node in a level
       //insert copies on a requested ancillae
 
-    for(auto node : node_to_cones)
+    for(int n = node_to_cones.size()-1; n >=0; n--)
     {
-      auto id = node.first;
+      SetQubits pol_controls; 
+
+      auto id = node_to_cones[n].first;
       
       for(auto i = 0; i < 2 ; i++)
       {
-        auto cone = node.second[i];
-        auto root = cone.node;
-        auto t = cone.target.empty() ? request_ancilla() : cone.target[0];
+        auto& cone =  node_to_cones[n].second[i];
+
+        if(cone.leaves.size() <= 1)
+        {
+          pol_controls.emplace_back(node_to_qubit[cone.root].top(), cone.complemented);
+          continue;
+        } 
+
+        auto t = cone.target.empty() ? request_ancilla() : node_to_qubit[cone.target[0]].top();
+        pol_controls.emplace_back(t, cone.complemented);
+
         for( auto l : cone.leaves )
         {
           auto lq = node_to_qubit[l].top();
-          if((lq != t) && (l != root))
-            qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( lq ), t );
-          node_to_qubit[root].push(t);
+          if(lq != t)
+            qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( lq ), t );       
         }
+        node_to_qubit[cone.root].push(t);
       }
 
       auto target = node_to_qubit[id].top();
-      compute_node(id, target );
+      if (ntk.is_and(id))
+        compute_and(pol_controls, target );
+      else if (ntk.is_xor(id))
+      {
+        compute_xor(pol_controls[0].index(), pol_controls[1].index(), 
+                    pol_controls[0].is_complemented() != pol_controls[1].is_complemented(), target );
+      }
       node_to_qubit[id].pop();
 
-      for(auto i = 0; i < 2 ; i++)
+      for(int i = 1; i >= 0 ; i--)
       {
-        auto cone = node.second[i];
-        auto root = cone.node;
+        auto cone = node_to_cones[n].second[i];
+        if(cone.leaves.size() <= 1) continue;
+
+        auto root = cone.root;
         auto t = node_to_qubit[root].top();
         for( auto l : cone.leaves )
         {
           auto lq = node_to_qubit[l].top();
           if(lq != t)
             qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( lq ), t );
-          node_to_qubit[root].pop();
         }
+        node_to_qubit[root].pop();
+
       }
     }
 
