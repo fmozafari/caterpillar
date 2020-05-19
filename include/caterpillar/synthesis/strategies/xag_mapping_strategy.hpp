@@ -97,14 +97,14 @@ static inline  std::vector<std::vector<uint32_t>> get_fi (xag_network const& xag
   return fi;
 }
 
-inline  std::vector<action_sets> get_cones( node_t node, xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
+inline  std::vector<cone_t> get_cones( node_t node, xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
 {
-  std::vector<action_sets> cones; 
+  std::vector<cone_t> cones; 
 
   xag.foreach_fanin( node, [&]( auto si ) {
     auto fanin = xag.get_node( si );
 
-    auto set = action_sets(fanin, fi[xag.node_to_index( fanin )], xag.is_complemented(si) ) ; 
+    auto set = cone_t(fanin, fi[xag.node_to_index( fanin )], xag.is_complemented(si) ) ; 
     cones.push_back( set ); 
   } );
   assert( cones.size() == 2 );
@@ -162,7 +162,7 @@ inline  std::vector<action_sets> get_cones( node_t node, xag_network const& xag,
   return cones;
 }
 
-static inline steps_xag_t gen_steps( node_t node, std::vector<action_sets> cones, bool compute)
+static inline steps_xag_t gen_steps( node_t node, std::vector<cone_t> cones, bool compute)
 {
   steps_xag_t comp_steps;
   
@@ -266,8 +266,6 @@ public:
     auto it = steps().begin();
 
     xag.foreach_node( [&]( auto node ) {
-      
-
       
       if ( xag.is_and( node ) || std::find( drivers.begin(), drivers.end(), node ) != drivers.end() )
       {
@@ -385,7 +383,7 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<xag_network>
   }
 
   pebbling_mapping_strategy_params ps;
-  std::unordered_map<abstract_network::node, std::pair<node_t, std::vector<action_sets>> > box_to_action;
+  std::unordered_map<abstract_network::node, std::pair<node_t, std::vector<cone_t>> > box_to_action;
 
 public: 
   
@@ -427,7 +425,7 @@ public:
 */
 class xag_low_depth_mapping_strategy : public mapping_strategy<xag_network>
 {
-  void eval_copies(std::vector<action_sets>& cones, boost::dynamic_bitset<>& visited)
+  void eval_copies(std::vector<cone_t>& cones, boost::dynamic_bitset<>& visited)
   {
     for(auto& cone : cones) 
     {
@@ -443,29 +441,12 @@ class xag_low_depth_mapping_strategy : public mapping_strategy<xag_network>
     for(auto cone : cones)
     {
       for(auto l : cone.leaves )
-        {
-          visited.set(l);
-        }
+      {
+        visited.set(l);
       }
     }
-
-  steps_xag_t gen_copies(std::vector<node_t> const& lvl, std::map<node_t, std::vector<action_sets>>& node_and_action)
-  {
-    steps_xag_t cp_st;
-    for(auto const& n : lvl)
-    {
-      auto cones = node_and_action[n];
-      if(!cones[0].copies.empty())
-      {
-        cp_st.push_back({cones[0].root, compute_copy_action{cones[0].copies}});
-      }
-      if(!cones[1].copies.empty())
-      {
-        cp_st.push_back({cones[1].root, compute_copy_action{cones[1].copies}});
-      }
-    }
-    return cp_st;
   }
+
 
 public: 
   
@@ -485,9 +466,10 @@ public:
 
     for(auto lvl : levels){ if(lvl.size() != 0)
     {
+
       /* store two action sets for each node in the level */
-      std::vector<std::pair<uint32_t, std::vector<action_sets>>> node_and_action;      
-      std::vector<std::pair<uint32_t, std::vector<action_sets>>> to_be_uncomputed;
+      std::vector<std::pair<uint32_t, std::vector<cone_t>>> node_and_action;      
+      std::vector<std::pair<uint32_t, std::vector<cone_t>>> to_be_uncomputed;
 
 
       boost::dynamic_bitset<> visited (xag.size());
@@ -529,7 +511,7 @@ public:
 */
 class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
 {
-  std::unordered_map<node_t, std::vector<action_sets>> node_to_cones;
+  std::unordered_map<node_t, std::vector<cone_t>> node_to_cones;
 
   //checks compatibility between nodes in one level and builds the graph
   detail::Graph <node_t> get_compatibility_graph( std::vector<node_t> const& lvl, xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )

@@ -14,7 +14,7 @@
 namespace caterpillar
 {
 
-struct action_sets
+struct cone_t
 {
   uint32_t root;
   std::vector<uint32_t> leaves;
@@ -23,11 +23,12 @@ struct action_sets
   std::vector<uint32_t> target = {};
   std::vector<uint32_t> copies = {};
 
-  action_sets( uint32_t root, std::vector<uint32_t> leaves, bool complemented = false )
+  cone_t( uint32_t root, std::vector<uint32_t> leaves, bool complemented = false )
       : root(root), leaves(leaves), complemented(complemented) {};
 };
 
-using level_info_t = std::vector<std::pair<uint32_t, std::vector<action_sets>>>;
+
+using level_info_t = std::vector<std::pair<uint32_t, std::vector<cone_t>>>;
 
 struct compute_action
 {
@@ -93,12 +94,12 @@ struct uncompute_oncopies_action
 struct compute_level_action
 {
   /* data */
-  level_info_t node_to_cones;
+  level_info_t level;
 };
 struct uncompute_level_action
 {
   /* data */
-  level_info_t node_to_cones;
+  level_info_t level;
 };
 
 

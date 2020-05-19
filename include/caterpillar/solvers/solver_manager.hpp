@@ -5,6 +5,8 @@
 #include <caterpillar/synthesis/strategies/action.hpp>
 #include <caterpillar/solvers/z3_solver.hpp>
 #include <type_traits>
+#include <limits>
+
 
 using namespace std::chrono;
 
@@ -23,7 +25,7 @@ struct pebbling_mapping_strategy_params
   uint32_t pebble_limit{0u};
 
   /*! \brief Maximum number of steps */
-  uint32_t max_steps{100000};
+  uint32_t max_steps{std::numeric_limits<uint>::max()};
 
   /*! \brief Conflict limit for the SAT solver (0 means no limit). */
   uint32_t conflict_limit{0};
@@ -94,6 +96,7 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
     }
     else if ( result == solver.sat() )
     {
+      solver.save_model();
       #ifdef USE_Z3
              
       if(ps.optimize_weight)
@@ -103,6 +106,8 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
           solver.print();
           std::cout << "[i] optimizing solution\n"; 
           solver.optimize_solution();
+          solver.print();
+
         }
       }
 

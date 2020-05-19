@@ -46,7 +46,7 @@ public:
   using result = z3::check_result;
 
 	z3_pebble_inplace_solver(const Ntk& net, const int& pebbles, const uint& max_conflicts = 0, const uint& timeout = 0, const uint max_weight = 0)
-	:_net(net), _pebbles(pebbles+_net.num_pis()+1), _max_weight(max_weight), slv(solver(ctx)), curr(variables(ctx)), next(variables(ctx))
+	:_net(net), _pebbles(pebbles+_net.num_pis()+1), _max_weight(max_weight), slv(solver(ctx)), solution_model(ctx), curr(variables(ctx)), next(variables(ctx))
 	{
 		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
 		static_assert( has_foreach_po_v<Ntk>, "Ntk does not implement the foreach_po method" );
@@ -107,6 +107,7 @@ public:
 	result unsat() { return result::unsat; }
 	result sat() { return result::sat; }
 	result unknown() { return result::unknown; }
+	void save_model() { solution_model = slv.get_model(); }
 
 
 	void add_step()
@@ -278,7 +279,6 @@ public:
 	void print()
 	{
 
-		model m = slv.get_model();
 		uint32_t w = 0;
 
 		for(uint32_t n=0; n<curr.s.size(); n++)
@@ -287,12 +287,12 @@ public:
 			for(uint32_t k =0; k<num_steps+1; k++)
 			{
 				auto s = fmt::format("s_{}_{}", k, n);
-				auto s_var = m.eval(ctx.bool_const(s.c_str()));
+				auto s_var = solution_model.eval(ctx.bool_const(s.c_str()));
 				if (s_var.is_true()) std::cout << "1" << "-";
 				else std::cout << "0" << "-";
 
 				auto a = fmt::format("a_{}_{}", k, n);
-				auto a_var = m.eval(ctx.bool_const(a.c_str()));
+				auto a_var = solution_model.eval(ctx.bool_const(a.c_str()));
 				if (_max_weight !=0)
 				{
 					if (a_var.is_true()) 
@@ -313,7 +313,7 @@ public:
 			for(uint32_t k =0; k<num_steps+1; k++)
 			{
 				auto a = fmt::format("a_{}_{}", k, n);
-				auto a_var = m.eval(ctx.bool_const(a.c_str()));
+				auto a_var = solution_model.eval(ctx.bool_const(a.c_str()));
 				if (a_var.is_true()) std::cout << "1" << "-";
 				else std::cout << "0" << "-";
 			}
@@ -328,7 +328,7 @@ public:
 			for(uint32_t k =0; k<num_steps+1; k++)
 			{
 				auto i = fmt::format("i_{}_{}", k, n);
-				auto i_var = m.eval(ctx.bool_const(i.c_str()));
+				auto i_var = solution_model.eval(ctx.bool_const(i.c_str()));
 				if (i_var.is_true()) std::cout << "1" << "-";
 				else std::cout << "0" << "-";
 			}
@@ -340,7 +340,6 @@ public:
 	std::vector<std::pair<mockturtle::node<pebbling_view<Ntk>>, mapping_strategy_action>> extract_result( bool verbose = false)
 	{
 
-		model m = slv.get_model();
 		std::vector<std::pair<mockturtle::node<pebbling_view<Ntk>>, mapping_strategy_action>> steps;
 
 		for (uint32_t k = 0; k <num_steps+1; k++)
@@ -353,10 +352,10 @@ public:
 			for (uint32_t i = 0; i< curr.s.size(); i++)
 			{
 				auto a_var = fmt::format("a_{}_{}", k, i).c_str();
-				if( m.eval(ctx.bool_const(a_var)).is_true())
+				if( solution_model.eval(ctx.bool_const(a_var)).is_true())
 				{
-					bool s_pre = m.eval( ctx.bool_const( fmt::format("s_{}_{}", k-1, i).c_str() )).is_true();
-					bool s_cur = m.eval( ctx.bool_const( fmt::format("s_{}_{}", k, i).c_str() )).is_true();
+					bool s_pre = solution_model.eval( ctx.bool_const( fmt::format("s_{}_{}", k-1, i).c_str() )).is_true();
+					bool s_cur = solution_model.eval( ctx.bool_const( fmt::format("s_{}_{}", k, i).c_str() )).is_true();
 					assert (s_pre != s_cur);
 					(void)s_pre;
 
@@ -376,7 +375,7 @@ public:
 				{
 					uint64_t node_fi = _net.get_node(fi);
 					auto i_var = fmt::format("i_{}_{}", k, node_fi).c_str();
-					if (m.eval(ctx.bool_const(i_var)).is_true())
+					if (solution_model.eval(ctx.bool_const(i_var)).is_true())
 					{
 						inplace = true;
 						act_ch_node = node_fi;
@@ -406,7 +405,7 @@ public:
 				{
 					uint64_t node_fi = _net.get_node(fi);
 					auto i_var = fmt::format("i_{}_{}", k, node_fi).c_str();
-					if (m.eval(ctx.bool_const(i_var)).is_true())
+					if (solution_model.eval(ctx.bool_const(i_var)).is_true())
 					{
 						inplace = true;
 						act_ch_node = node_fi;
@@ -440,7 +439,7 @@ const int _max_weight;
 
 context ctx;
 solver slv;
-
+model solution_model;
 uint32_t num_steps = 0;
 variables curr;
 variables next;

@@ -70,13 +70,12 @@ class z3_pebble_solver
 
 	uint get_weight_from_model()
 	{
-		auto m = slv.get_model();
 		auto w = 0u;
 		for(uint32_t n=0; n< current.s.size(); n++)
 		{
 			for(uint32_t k =0; k< num_steps+1; k++)
 			{
-				auto a_var = m.eval(ctx.bool_const(fmt::format("a_{}_{}", k, n).c_str()));
+				auto a_var = solution_model.eval(ctx.bool_const(fmt::format("a_{}_{}", k, n).c_str()));
 				if (a_var.is_true()) 
 				{
 					if constexpr (has_get_weight_v<Ntk>)
@@ -94,15 +93,13 @@ public:
 	using node = node<Ntk>;
 	using result = z3::check_result;
 
-	uint32_t node_to_var( node n )
-	{
-		return n - detail::resp_num_pis(_net);
-	}
-
-	node var_to_node(uint32_t var)
-	{
-		return var + detail::resp_num_pis(_net);
-	}
+	uint32_t node_to_var( node n ) { return n - detail::resp_num_pis(_net); }
+	node var_to_node(uint32_t var) { return var + detail::resp_num_pis(_net); }
+	uint32_t current_step() { return num_steps; }
+	result unsat() { return result::unsat; }
+	result sat() { return result::sat; }
+	result unknown() { return result::unknown; }
+	void save_model() { solution_model = slv.get_model(); }
 
 	expr_vector new_variable_set(std::string s)
 	{
@@ -128,15 +125,7 @@ public:
 		slv.add(!mk_or(current.s));
 	}
 
-	uint32_t current_step()
-	{
-		return num_steps;
-	}
-
-	result unsat() { return result::unsat; }
-	result sat() { return result::sat; }
-	result unknown() { return result::unknown; }
-
+	
 
 	void add_step()
 	{
@@ -183,6 +172,8 @@ public:
 		}
 		return clause;
 	}
+	
+
 
 	result solve()
 	{
@@ -218,20 +209,19 @@ public:
 	{
 
 		expr_vector w_expr = weight_expr();
-		uint last_sat_w = get_weight_from_model();
+		uint w = get_weight_from_model();
 		while(true)
 		{
 			slv.push();	
-			uint w = last_sat_w -1;
-			slv.add(atmost(w_expr, w));
-			
+			slv.add(atmost(w_expr, w - 1));
 			auto res = slv.check();
 			slv.pop();
 
 			std::cout << res << "\n";
 			if(res == sat())
 			{
-				last_sat_w = w;
+				solution_model = slv.get_model();
+				w = w-1;
 				continue;
 			}
 			if(res != sat())
@@ -239,15 +229,12 @@ public:
 				break;
 			}
 		}
-		slv.add(atmost(w_expr, last_sat_w));
-		auto s = slv.check();
-		assert(s == z3::check_result::sat);
+		
 	}
 
 	void print()
 	{
 
-		model m = slv.get_model();
 		uint32_t w = 0;
 
 		std::cout << "\nState variables:" << std::endl;
@@ -256,7 +243,7 @@ public:
 			for(uint32_t k =0; k<num_steps+1; k++)
 			{
 				auto s = fmt::format("s_{}_{}", k, n);
-				auto s_var = m.eval(ctx.bool_const(s.c_str()));
+				auto s_var = solution_model.eval(ctx.bool_const(s.c_str()));
 				if (s_var.is_true()) std::cout << "1" << "-";
 				else std::cout << "0" << "-";
 			}
@@ -269,7 +256,7 @@ public:
 			for(uint32_t k =0; k<num_steps+1; k++)
 			{
 				auto a = fmt::format("a_{}_{}", k, n);
-				auto a_var = m.eval(ctx.bool_const(a.c_str()));
+				auto a_var = solution_model.eval(ctx.bool_const(a.c_str()));
 
 				if constexpr ( has_get_weight_v<Ntk> )
 				{	
@@ -296,7 +283,6 @@ public:
 
 	std::vector<std::pair<mockturtle::node<pebbling_view<Ntk>>, mapping_strategy_action>> extract_result( bool verbose = false)
 	{
-		model m = slv.get_model();
 		std::vector<std::pair<mockturtle::node<pebbling_view<Ntk>>, mapping_strategy_action>> steps;
 
 		for (uint32_t k = 0; k <num_steps+1; k++)
@@ -307,10 +293,10 @@ public:
 			for (uint32_t i = 0; i< current.s.size(); i++)
 			{
 				auto a_var = fmt::format("a_{}_{}", k, i).c_str();
-				if( m.eval(ctx.bool_const(a_var)).is_true())
+				if( solution_model.eval(ctx.bool_const(a_var)).is_true())
 				{
-					bool s_pre = m.eval( ctx.bool_const( fmt::format("s_{}_{}", k-1, i).c_str() )).is_true();
-					bool s_cur = m.eval( ctx.bool_const( fmt::format("s_{}_{}", k, i).c_str() )).is_true();
+					bool s_pre = solution_model.eval( ctx.bool_const( fmt::format("s_{}_{}", k-1, i).c_str() )).is_true();
+					bool s_cur = solution_model.eval( ctx.bool_const( fmt::format("s_{}_{}", k, i).c_str() )).is_true();
 					assert (s_pre != s_cur);
 					(void)s_pre;
 
@@ -336,7 +322,7 @@ public:
 	}
 
 	z3_pebble_solver(const Ntk& net, const int& pebbles, const uint& max_conflicts = 0u, const uint& timeout = 0u)
-	:_net(net), _pebbles(pebbles), slv(solver(ctx)), current(variables(ctx)), next(variables(ctx))
+	:_net(net), _pebbles(pebbles), slv(solver(ctx)), solution_model(ctx), current(variables(ctx)), next(variables(ctx))
 	{
 		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
 		static_assert( has_foreach_po_v<Ntk>, "Ntk does not implement the foreach_po method" );
@@ -361,6 +347,7 @@ private:
 
 	context ctx;
 	solver slv;
+	model solution_model;
 
 	uint32_t num_steps = 0;
 	variables current;

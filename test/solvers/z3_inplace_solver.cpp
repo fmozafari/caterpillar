@@ -67,6 +67,7 @@ TEST_CASE(" pebble inplace simple graph ", "[pebin]")
 
 	CHECK(z3_solver.solve() == sat);
 	
+	z3_solver.save_model();
 	auto strategy = z3_solver.extract_result(false);
 
   CHECK( strategy.size() == 3 );
@@ -108,6 +109,7 @@ TEST_CASE("pebble inplace simple graph 2", "[pebin2]")
 
 	CHECK(z3_solver.solve() == sat);
 	
+	z3_solver.save_model();
 	auto strategy = z3_solver.extract_result(false);
 
 	CHECK( strategy.size() == 2 );
@@ -144,7 +146,8 @@ TEST_CASE("pebble inplace simple graph 3", "[pebin3]")
 	}while (z3_solver.solve() == unsat);
 
 	CHECK(z3_solver.solve() == sat);
-	
+
+	z3_solver.save_model();
 	auto strategy = z3_solver.extract_result(false);
 
 	CHECK( strategy.size() == 5 );
@@ -191,7 +194,7 @@ TEST_CASE("pebble inplace simple graph 4", "[pebin4]")
 	}while (z3_solver.solve() == unsat);
 
 	CHECK(z3_solver.solve() == sat);
-	
+	z3_solver.save_model();
 	auto strategy = z3_solver.extract_result(false);
 
 	CHECK( strategy.size() == 9 );

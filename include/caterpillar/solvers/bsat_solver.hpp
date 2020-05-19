@@ -26,7 +26,7 @@ class bsat_pebble_solver
 {
   
 public:
-
+  using model = std::vector<std::vector<int>>;
   using Steps = std::vector<std::pair<mockturtle::node<Network>, mapping_strategy_action>>;
   using result = percy::synth_result;
 
@@ -51,16 +51,27 @@ public:
     extra = ( _pebbles < _nr_gates ) ? _pebbles * ( _nr_gates - _pebbles ) : 0;
   }
 
-  inline uint32_t current_step() const
-  {
-    return _nr_steps;
-  }
+  inline uint32_t current_step() const { return _nr_steps; }
 
   result unsat(){ return result::failure; }
 
   result sat(){ return result::success; }
 
   result unknown(){ return result::timeout; }
+
+  void save_model() 
+  {
+    solution_model.resize( _nr_steps + 1);
+
+    for ( auto i = 0u; i <= _nr_steps; ++i )
+    {
+      for ( auto j = 0u; j < _nr_gates; ++j )
+      {
+        const auto value = solver.var_value( pebble_var( i, j ) );
+        solution_model[i].push_back( value );
+      }
+    }
+  }
 
   inline void add_edge_clause( int p, int p_n, int ch, int ch_n )
   {
@@ -194,17 +205,8 @@ public:
 
   Steps extract_result()
   {
-    std::vector<std::vector<int>> vals_step( _nr_steps + 1 );
     Steps steps;
 
-    for ( auto i = 0u; i <= _nr_steps; ++i )
-    {
-      for ( auto j = 0u; j < _nr_gates; ++j )
-      {
-        const auto value = solver.var_value( pebble_var( i, j ) );
-        vals_step[i].push_back( value );
-      }
-    }
 
     /* remove redundant steps */
     mockturtle::fanout_view<Network> fanout_view{_net};
@@ -213,7 +215,7 @@ public:
       for ( auto j = 0u; j < _nr_gates; ++j )
       {
         /* Is j pebbled at step i? */
-        if ( vals_step[i][j] && !vals_step[i - 1][j] )
+        if ( solution_model[i][j] && !solution_model[i - 1][j] )
         {
           bool redundant = true;
           int redundant_until = -1;
@@ -225,7 +227,7 @@ public:
           {
             for ( auto parent : parent_indexes )
             {
-              if ( vals_step[ii][parent] != vals_step[ii - 1][parent] )
+              if ( solution_model[ii][parent] != solution_model[ii - 1][parent] )
               {
                 redundant = false;
                 break;
@@ -233,7 +235,7 @@ public:
             }
             if ( !redundant )
               break;
-            if ( !vals_step[ii][j] && vals_step[ii - 1][j] )
+            if ( !solution_model[ii][j] && solution_model[ii - 1][j] )
             {
               redundant_until = ii;
               break;
@@ -245,24 +247,24 @@ public:
             // Found redundant gate j at step i until redundant_until
             for ( int ii = i; ii < redundant_until; ++ii )
             {
-              vals_step[ii][j] = 0;
+              solution_model[ii][j] = 0;
             }
           }
         }
 
         /* Is j unpebbled at step i? */
-        if ( !vals_step[i][j] && vals_step[i - 1][j] )
+        if ( !solution_model[i][j] && solution_model[i - 1][j] )
         {
           bool redundant = true;
           int redundant_until = -1;
           for ( auto ii = i + 1u; ii <= _nr_steps; ++ii )
           {
-            if ( std::count( vals_step[ii].begin(), vals_step[ii].end(), 1 ) == _pebbles )
+            if ( std::count( solution_model[ii].begin(), solution_model[ii].end(), 1 ) == _pebbles )
             {
               redundant = false;
               break;
             }
-            if ( vals_step[ii][j] && !vals_step[ii - 1][j] )
+            if ( solution_model[ii][j] && !solution_model[ii - 1][j] )
             {
               redundant_until = ii;
               break;
@@ -274,7 +276,7 @@ public:
             // Found redundant gate j at step i until redundant_until
             for ( int ii = i; ii < redundant_until; ++ii )
             {
-              vals_step[ii][j] = 1;
+              solution_model[ii][j] = 1;
             }
           }
         }
@@ -287,7 +289,7 @@ public:
 
       for ( auto n = 0u; n < _nr_gates; n++ )
       {
-        if ( vals_step[s][n] != vals_step[s - 1][n] )
+        if ( solution_model[s][n] != solution_model[s - 1][n] )
         {
           bool inplace = false;
           uint32_t target{};
@@ -313,7 +315,7 @@ public:
           }
 #endif
 
-          if ( !vals_step[s][n] )
+          if ( !solution_model[s][n] )
           {
             if ( inplace )
             {
@@ -351,6 +353,7 @@ private:
 
   percy::bsat_wrapper solver;
   Network const& _net;
+  model solution_model;
   uint32_t _pebbles;
   uint32_t _nr_gates;
   uint32_t _nr_steps = 0;

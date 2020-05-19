@@ -41,7 +41,7 @@ TEST_CASE(" pebble simple graph ", "[pebble simple graph]")
 	}while (z3_solver.solve() == unsat);
 
 	CHECK(z3_solver.solve() == sat);
-
+	z3_solver.save_model();
 	auto strategy = z3_solver.extract_result(false);
 
   assert( strategy.size() == 3 );
@@ -75,6 +75,7 @@ TEST_CASE(" pebble simple graph 4 nodes ", "[pebble simple graph 4 nodes]")
 
 	CHECK(z3_solver.solve() == sat);
 
+	z3_solver.save_model();
 	auto strategy = z3_solver.extract_result(false);
 
 	assert( strategy.size() == 9 );
@@ -116,7 +117,7 @@ TEST_CASE("pebble using weights", "[pebble using weights]")
 	}while (z3_solver.solve() == unsat);
 
 	CHECK(z3_solver.solve() == sat);
-
+	z3_solver.save_model();
 	auto strategy = z3_solver.extract_result( false );
 }
 #endif
