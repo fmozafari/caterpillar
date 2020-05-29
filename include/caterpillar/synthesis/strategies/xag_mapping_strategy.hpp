@@ -22,6 +22,7 @@
 #include <caterpillar/details/depth_costs.hpp>
 #include <algorithm>
 #include <chrono>
+#include <igraph.h>
 #include <fmt/format.h>
 using namespace std::chrono;
 
@@ -511,24 +512,32 @@ public:
 */
 class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
 {
-  std::unordered_map<node_t, std::vector<cone_t>> node_to_cones;
 
   //checks compatibility between nodes in one level and builds the graph
-  detail::Graph <node_t> get_compatibility_graph( std::vector<node_t> const& lvl, xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
+  level_info_t largest_set_compatible_nodes(
+                    std::vector<node_t> const& lvl,
+                    mockturtle::xag_network const& xag,  
+                    std::vector<std::vector<uint32_t>> const& fi )
   {
-    detail::Graph<node_t> graph;
+    assert(!lvl.empty());
+
+    if (lvl.size()==1)
+    {
+      return {{lvl[0], get_cones(lvl[0], xag, fi)}};
+    }
+
+    level_info_t max_clique;
+    std::unordered_map<node_t, std::vector<cone_t>> node_to_cones;
 
     /* set the masks for all the nodes in the level */
+    /* has set bit if the corresponding leaf is present */
     std::vector<boost::dynamic_bitset<>> masks (lvl.size());
-
     for(uint32_t i = 0; i < lvl.size(); i++)
     {  
-      auto node = lvl[i];
-      graph.push_front({node});
-
       masks[i].resize(xag.size());
-
-      auto cones = get_cones(node, xag, fi);  
+      auto cones = get_cones(lvl[i], xag, fi);  
+      node_to_cones[lvl[i]] = cones;
+      //fmt::print("\tnode {} with leaves {} and {} \n", lvl[i], fmt::join(cones[0].leaves, " "), fmt::join(cones[1].leaves, " "));
       for (auto l : cones[0].leaves)
       {
         assert(masks[i].size() > l);
@@ -539,10 +548,13 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
         assert(masks[i].size() > l);
         masks[i].set(l);
       }
-      node_to_cones[node] = cones;
     }
 
     /* build the graph comparing the masks */
+    igraph_t graph;
+    igraph_integer_t nv = lvl.size();
+    igraph_vector_t edges;
+    igraph_vector_init(&edges, 0);
     for(uint32_t i = 1; i < lvl.size(); i++)
     {
       for (uint32_t j = 0; j < i; j++ )
@@ -550,12 +562,46 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
         auto merge = masks[i] & masks[j];
         if ( merge.none())
         {
-          caterpillar::detail::edge <node_t> (graph, lvl[i], lvl[j]);
+          igraph_vector_push_back(&edges , i);
+          igraph_vector_push_back(&edges , j);
         }
       }
     }
+    igraph_create( &graph, &edges, nv, /*undirected*/0);
 
-    return graph;
+    /* get largest clique O(3^(|V|/3)) worst case*/
+    if (igraph_ecount(&graph) > 0)
+    {
+      igraph_vector_ptr_t cliques;
+      igraph_vector_ptr_init(&cliques, 0);
+      igraph_largest_cliques(&graph, &cliques);
+
+      //get the first largest clique
+      igraph_vector_t *v = (igraph_vector_t*)VECTOR(cliques)[0];
+      //igraph_vector_print(v);
+
+      //cast to std::vector //
+      for (int j = 0; j < igraph_vector_size(v); j++)
+      {
+        auto e = VECTOR(*v)[j];
+        assert(e<lvl.size());
+        auto& node = lvl[e];
+        max_clique.push_back({node, node_to_cones[node]});
+      }
+
+      igraph_vector_destroy(v);
+      igraph_free(v);
+    }
+    else //return the entire level as there is no way of optimizing without copying
+    {
+      for (auto node : lvl)
+      {
+        max_clique.push_back({node, node_to_cones[node]});
+      }
+    }
+
+    igraph_destroy(&graph);
+    return max_clique;
   }
 
 public: 
@@ -565,8 +611,8 @@ public:
     // the strategy proceeds in topological order
     mockturtle::topo_view xag {ntk};
 
-
     auto drivers = detail::get_outputs(xag);
+
     auto fi = get_fi (xag, drivers);
     
     /* each m_level is filled with AND nodes and XOR outputs */
@@ -575,68 +621,34 @@ public:
 
     auto it = steps().begin();
 
-    for(auto lvl : levels){if(lvl.size() != 0)
+    for(auto lvl : levels)
     {
-      auto cgraph = get_compatibility_graph( lvl, xag, fi );
-      // get the cliques
-      detail::Solution<node_t> solution;
-      detail::solve <node_t> ({ {} }, cgraph , { {} }, std::bind (detail::aggregator <node_t>, std::ref (solution), detail::_1, detail::_2, detail::_3) );
+      assert(lvl.size()!=0);
+      auto tmp_lvl = lvl;
 
-      while( ! solution.empty() )
+      while (!tmp_lvl.empty())
       {
-        //decrescent order
-        solution.sort( [&]  (const detail::Graph<node_t>& first, const detail::Graph <node_t>&  second) -> bool
+        level_info_t clique = largest_set_compatible_nodes(tmp_lvl, xag, fi);
+        level_info_t to_be_uncomputed;
+
+        // the action is to be modified to work without copies, 
+        // MAYBE it works fine anyways since cone.copies are empty 
+        it = steps().insert(it, {tmp_lvl[0], compute_level_action{clique}});
+        it = it + 1;
+      
+        for(auto& node : clique)
         {
-          return ( first.size() > second.size() );
-        });
-
-
-        auto clique = *solution.begin();
-
-        for(auto n : clique)
-        {
-          auto node = n.id;
-
-          auto cones = node_to_cones[node];
-
-          if ( xag.is_and( node ))
-          {
-            /* compute step */
-            auto cc = gen_steps( node , cones,  true);
-            it = steps().insert( it, cc.begin(), cc.end() );
-            it = it + cc.size();
-
-            if ( std::find( drivers.begin(), drivers.end(), node ) == drivers.end()  )
-            { 
-              auto uc = gen_steps( node , cones, false);
-              it = steps().insert( it, uc.begin(), uc.end() );
-            }
-          }
-          /* node is an XOR output */
-          else 
-          {
-            auto xc = gen_steps( node, cones, true);
-            it = steps().insert( it, xc.begin(), xc.end() );
-            it = it + xc.size();
-          }
+          if(std::find(drivers.begin(), drivers.end(), node.first) == drivers.end())
+            to_be_uncomputed.push_back(node);
         }
-          
-        //remove clique from solution
-        solution.remove(clique);
 
-        for (auto v : clique)
+        it = steps().insert(it, {tmp_lvl[0], uncompute_level_action{to_be_uncomputed}});
+
+        for (auto n : clique)
         {
-          for (auto& g : solution)
-          {
-            if (std::find(g.begin(), g.end(), v) != g.end()) 
-            {
-              g.remove(v);
-            }     
-          }
+          tmp_lvl.erase(std::find(tmp_lvl.begin(), tmp_lvl.end(), n.first));
         }
       }
-
-    }
     }
     return true;
   }

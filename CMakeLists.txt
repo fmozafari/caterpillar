@@ -10,9 +10,13 @@ option(CATERPILLAR_EXPERIMENTS "Build experiments" OFF)
 option(CATERPILLAR_TEST "Build tests" ON)
 
 option(CATERPILLAR_Z3 "Use z3" OFF)
-
 set(Z3_INCLUDE_DIR "" CACHE STRING "If set, use this as Z3 include directory")
 set(Z3_LINK_DIR "" CACHE STRING "If set, use this as Z3 link directory")
+
+
+option(CATERPILLAR_iGRAPH "Use iGRAPH" OFF)
+set(iGRAPH_INCLUDE_DIR "" CACHE STRING "If set, use this as iGRAPH include directory")
+set(iGRAPH_LINK_DIR "" CACHE STRING "If set, use this as iGRAPH link directory")
 
 if(UNIX)
   # show quite some warnings (but remove some intentionally)
