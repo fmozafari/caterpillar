@@ -70,27 +70,6 @@ struct uncompute_inplace_action
   std::optional<std::vector<uint32_t>> leaves;
 };
 
-struct compute_copy_action
-{
-  std::vector<uint32_t> copies;
-};
-
-struct uncompute_copy_action
-{
-  std::vector<uint32_t> copies;
-};
-
-struct compute_oncopies_action
-{
-  std::vector<uint32_t> leaves;
-  std::vector<uint32_t> copies;
-};
-struct uncompute_oncopies_action
-{
-  std::vector<uint32_t> leaves;
-  std::vector<uint32_t> copies;
-};
-
 struct compute_level_action
 {
   /* data */
@@ -106,8 +85,6 @@ struct uncompute_level_action
 using mapping_strategy_action = 
   std::variant<compute_action, uncompute_action,
                compute_inplace_action, uncompute_inplace_action, 
-               compute_copy_action, uncompute_copy_action, 
-               compute_oncopies_action, uncompute_oncopies_action,
                compute_level_action, uncompute_level_action>;
 
 namespace detail

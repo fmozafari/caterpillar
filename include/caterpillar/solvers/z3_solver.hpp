@@ -217,7 +217,6 @@ public:
 			auto res = slv.check();
 			slv.pop();
 
-			std::cout << res << "\n";
 			if(res == sat())
 			{
 				solution_model = slv.get_model();
@@ -322,7 +321,7 @@ public:
 	}
 
 	z3_pebble_solver(const Ntk& net, const int& pebbles, const uint& max_conflicts = 0u, const uint& timeout = 0u)
-	:_net(net), _pebbles(pebbles), slv(solver(ctx)), solution_model(ctx), current(variables(ctx)), next(variables(ctx))
+:_net(net), _pebbles(pebbles), slv(solver(ctx)), solution_model(ctx), current(variables(ctx)), next(variables(ctx))
 	{
 		static_assert( has_get_node_v<Ntk>, "Ntk does not implement the get_node method" );
 		static_assert( has_foreach_po_v<Ntk>, "Ntk does not implement the foreach_po method" );

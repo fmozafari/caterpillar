@@ -22,7 +22,9 @@
 #include <caterpillar/details/depth_costs.hpp>
 #include <algorithm>
 #include <chrono>
+#ifdef USE_iGRAPH
 #include <igraph.h>
+#endif
 #include <fmt/format.h>
 using namespace std::chrono;
 
@@ -169,27 +171,18 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<cone_t> cones, boo
   
   for(auto ch : cones)
   {
-    if(ch.copies.empty() || !compute)
+    assert(ch.copies.empty());
+ 
+    if( ch.leaves.size()>1 )
     {
-      if ( (ch.leaves.size()==1) && (ch.leaves[0]!=ch.root) ){
-        ch.leaves.erase(ch.leaves.end()-1);
+      if ( !ch.target.empty() )
+      {
         comp_steps.push_back( {ch.root, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
       }
-      else if( ch.leaves.size()>1 )
+      else 
       {
-        if ( !ch.target.empty() )
-        {
-          comp_steps.push_back( {ch.root, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
-        }
-        else 
-        {
-          comp_steps.push_back( {ch.root, compute_action{ ch.leaves, std::nullopt}} );
-        }
+        comp_steps.push_back( {ch.root, compute_action{ ch.leaves, std::nullopt}} );
       }
-    }
-    else 
-    {
-      comp_steps.push_back( {ch.root, compute_oncopies_action{ch.leaves, ch.copies}} );
     }
 
   }
@@ -204,24 +197,19 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<cone_t> cones, boo
 
   for(auto ch : cones)
   {
-    if(ch.copies.empty() || !compute)
+    
+    if (ch.leaves.size() > 1)
     {
-      if (ch.leaves.size() > 1){
-        if ( !ch.target.empty() )
-        {
-          comp_steps.push_back( {ch.root, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
-        }
-        else 
-        {
-          comp_steps.push_back( {ch.root, compute_action{ ch.leaves, std::nullopt}} );
-        }
+      if ( !ch.target.empty() )
+      {
+        comp_steps.push_back( {ch.root, compute_inplace_action{static_cast<uint32_t>( ch.target[0] ), ch.leaves}} );
+      }
+      else 
+      {
+        comp_steps.push_back( {ch.root, compute_action{ ch.leaves, std::nullopt}} );
       }
     }
-    else 
-    {
-      comp_steps.push_back( {ch.root, uncompute_oncopies_action{ch.leaves, ch.copies}} );
-      comp_steps.push_back( {ch.root, uncompute_copy_action{ ch.copies}} );
-    }
+   
   }
   
   return comp_steps;
@@ -502,7 +490,7 @@ public:
   }
 };
 
-
+#ifdef USE_iGRAPH
 /*!
   \verbatim embed:rst
     This strategy is dedicated to XAG graphs and fault tolerant quantum computing.
@@ -653,4 +641,5 @@ public:
     return true;
   }
 };
+#endif
 } // namespace caterpillar

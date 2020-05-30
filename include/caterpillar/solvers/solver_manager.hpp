@@ -103,11 +103,7 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
       {
         if constexpr (std::is_same_v<Solver, z3_pebble_solver<Ntk>>)
         { 
-          solver.print();
-          std::cout << "[i] optimizing solution\n"; 
           solver.optimize_solution();
-          solver.print();
-
         }
       }
 
