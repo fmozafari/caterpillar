@@ -153,14 +153,7 @@ inline  std::vector<cone_t> get_cones( node_t node, xag_network const& xag, std:
       cones[0].target = fi[left];
     }
   }
-  if ( cones[0].leaves.size() == 1 && cones[0].leaves[0] != cones[0].root )
-  {
-    cones[0].root = cones[0].leaves[0];
-  }
-  if ( cones[1].leaves.size() == 1 && cones[1].leaves[0] != cones[1].root )
-  {
-    cones[1].root = cones[1].leaves[0];
-  }
+
 
   return cones;
 }
@@ -172,8 +165,11 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<cone_t> cones, boo
   for(auto ch : cones)
   {
     assert(ch.copies.empty());
- 
-    if( ch.leaves.size()>1 )
+    if(ch.is_buffer())
+    {
+      comp_steps.push_back({ch.root, buffer_action{ch.root, ch.leaves[0]}});
+    }
+    if(!ch.is_and_or_pi())
     {
       if ( !ch.target.empty() )
       {
@@ -197,8 +193,11 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<cone_t> cones, boo
 
   for(auto ch : cones)
   {
-    
-    if (ch.leaves.size() > 1)
+    if(ch.is_buffer())
+    {
+      comp_steps.push_back({ch.root, buffer_action{ch.leaves[0], ch.root}});
+    }
+    if(!ch.is_and_or_pi())
     {
       if ( !ch.target.empty() )
       {

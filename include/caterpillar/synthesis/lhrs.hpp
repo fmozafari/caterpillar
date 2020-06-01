@@ -174,6 +174,9 @@ public:
                   compute_node_inplace( node, t );
                 }
               },
+              [&] (buffer_action const& action){
+                node_to_qubit[action.target].push( node_to_qubit[action.leaf].top() );
+              },
               [&] (compute_level_action const& action){
                 compute_level_with_copies(action.level);
               },
@@ -637,7 +640,7 @@ private:
         {
           if(cone.leaves.size() == 1)
           {
-            roots_targets[i] = node_to_qubit[cone.root].top();
+            roots_targets[i] = node_to_qubit[cone.leaves[0]].top();
           }
           else
           {

@@ -59,6 +59,8 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
 
   auto limit = ps.pebble_limit;
   
+  auto start = high_resolution_clock::now(); 
+
   Steps<Ntk> steps;
   while ( true )
   {
@@ -69,7 +71,6 @@ inline Steps<Ntk> pebble (Ntk ntk, pebbling_mapping_strategy_params const& ps = 
 
     mockturtle::progress_bar bar( 100, "|{0}| current step = {1}", ps.progress );
 
-    auto start = high_resolution_clock::now(); 
     do
     {
       if ( solver.current_step() >= ps.max_steps )

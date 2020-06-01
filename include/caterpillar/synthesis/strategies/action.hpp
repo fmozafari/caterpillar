@@ -25,6 +25,9 @@ struct cone_t
 
   cone_t( uint32_t root, std::vector<uint32_t> leaves, bool complemented = false )
       : root(root), leaves(leaves), complemented(complemented) {};
+
+  bool is_buffer() {return ( (leaves.size() == 1) && (leaves[0] != root) );}
+  bool is_and_or_pi() {return ( (leaves.size() == 1) && (leaves[0] == root) );}
 };
 
 
@@ -69,7 +72,11 @@ struct uncompute_inplace_action
   uint32_t target_index;
   std::optional<std::vector<uint32_t>> leaves;
 };
-
+struct buffer_action
+{
+  uint32_t target;
+  uint32_t leaf;
+};
 struct compute_level_action
 {
   /* data */
@@ -84,7 +91,7 @@ struct uncompute_level_action
 
 using mapping_strategy_action = 
   std::variant<compute_action, uncompute_action,
-               compute_inplace_action, uncompute_inplace_action, 
+               compute_inplace_action, uncompute_inplace_action, buffer_action,
                compute_level_action, uncompute_level_action>;
 
 namespace detail
