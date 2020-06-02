@@ -121,17 +121,25 @@ inline  std::vector<cone_t> get_cones( node_t node, xag_network const& xag, std:
     cones[0].target = cones[0].leaves;
 
     /* remove the single leaf if there is overlap */
+    /* and swap */
     auto it = std::find(cones[0].target.begin(), cones[0].target.end(), cones[1].leaves[0]);
     if (it != cones[0].target.end())
+    {
       cones[0].target.erase( it );
+      std::reverse(cones.begin(), cones.end());
+    }
+
   }
   else 
   {
     if ( is_included(fi[xag.node_to_index(cones[1].root)], fi[xag.node_to_index(cones[0].root)]) )
+    { 
       std::reverse(cones.begin(), cones.end());
+    }
 
     auto left = xag.node_to_index(cones[0].root);
     auto right = xag.node_to_index(cones[1].root);
+
 
     /* search a target for first */
     /* empty if left is included TODO: remove this */
@@ -154,7 +162,6 @@ inline  std::vector<cone_t> get_cones( node_t node, xag_network const& xag, std:
     }
   }
 
-
   return cones;
 }
 
@@ -169,7 +176,7 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<cone_t> cones, boo
     {
       comp_steps.push_back({ch.root, buffer_action{ch.root, ch.leaves[0]}});
     }
-    if(!ch.is_and_or_pi())
+    else if(!ch.is_and_or_pi())
     {
       if ( !ch.target.empty() )
       {
@@ -197,7 +204,7 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<cone_t> cones, boo
     {
       comp_steps.push_back({ch.root, buffer_action{ch.leaves[0], ch.root}});
     }
-    if(!ch.is_and_or_pi())
+    else if(!ch.is_and_or_pi())
     {
       if ( !ch.target.empty() )
       {
@@ -497,6 +504,7 @@ public:
     It performs as many AND operations in parallel as possible.
   \endverbatim
 */
+
 class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
 {
 
@@ -565,9 +573,7 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
 
       //get the first largest clique
       igraph_vector_t *v = (igraph_vector_t*)VECTOR(cliques)[0];
-      //igraph_vector_print(v);
 
-      //cast to std::vector //
       for (int j = 0; j < igraph_vector_size(v); j++)
       {
         auto e = VECTOR(*v)[j];
@@ -591,8 +597,15 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
     return max_clique;
   }
 
+  uint32_t qubits_offset = 0;
+
 public: 
-  
+
+  uint32_t get_offset()
+  {
+    return qubits_offset;
+  }
+
   bool compute_steps( xag_network const& ntk ) override
   {
     // the strategy proceeds in topological order
@@ -618,8 +631,6 @@ public:
         level_info_t clique = largest_set_compatible_nodes(tmp_lvl, xag, fi);
         level_info_t to_be_uncomputed;
 
-        // the action is to be modified to work without copies, 
-        // MAYBE it works fine anyways since cone.copies are empty 
         it = steps().insert(it, {tmp_lvl[0], compute_level_action{clique}});
         it = it + 1;
       
@@ -635,6 +646,9 @@ public:
         {
           tmp_lvl.erase(std::find(tmp_lvl.begin(), tmp_lvl.end(), n.first));
         }
+
+        if(clique.size()>qubits_offset)
+          qubits_offset = clique.size();
       }
     }
     return true;

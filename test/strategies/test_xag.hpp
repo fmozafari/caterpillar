@@ -369,11 +369,12 @@ static mockturtle::xag_network get_xag(uint const& val)
     auto n2 = xag.create_xor(n1, x3);
     auto n3 = xag.create_xor(n2, x4);
     auto n4 = xag.create_xor(n3, x5);
-
     auto n5 = xag.create_xor(n3, n4);
-    auto n6 = xag.create_and(n5, x3);
+    auto n5b = xag.create_xor(n5, x3);
 
-    xag.create_po(n6);
+    auto n6 = xag.create_and(n5, n5b);
+    auto n7 = xag.create_and(n6, x1);
+    xag.create_po(n7);
   }
   return xag;
 }

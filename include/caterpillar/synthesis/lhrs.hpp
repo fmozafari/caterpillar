@@ -175,14 +175,28 @@ public:
                 }
               },
               [&] (buffer_action const& action){
+                if(ps.verbose)
+                {
+                  fmt::print("[i] compute buffer from node {} to node {}\n", action.leaf, action.target);
+                }
                 node_to_qubit[action.target].push( node_to_qubit[action.leaf].top() );
               },
               [&] (compute_level_action const& action){
+                if(ps.verbose)
+                {
+                  fmt::print("[i] compute level\n");
+                }
                 compute_level_with_copies(action.level);
               },
               [&] (uncompute_level_action const& action){
                 if(!action.level.empty())
-                uncompute_level(action.level);
+                {
+                  if(ps.verbose)
+                  {
+                    fmt::print("[i] uncompute level\n");
+                    uncompute_level(action.level);
+                  }
+                }
               }},
           action );
     } );
@@ -800,7 +814,7 @@ private:
 
         if(cone.leaves.size() <= 1)
         {
-          pol_controls.emplace_back(node_to_qubit[cone.root].top(), cone.complemented);
+          pol_controls.emplace_back(node_to_qubit[cone.leaves[0]].top(), cone.complemented);
           continue;
         } 
 
