@@ -194,8 +194,8 @@ public:
                   if(ps.verbose)
                   {
                     fmt::print("[i] uncompute level\n");
-                    uncompute_level(action.level);
                   }
+                  uncompute_level(action.level);
                 }
               }},
           action );
