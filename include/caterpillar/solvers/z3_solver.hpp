@@ -215,16 +215,17 @@ public:
 			slv.push();	
 			slv.add(atmost(w_expr, w - 1));
 			auto res = slv.check();
-			slv.pop();
 
 			if(res == sat())
 			{
 				solution_model = slv.get_model();
 				w = w-1;
+				slv.pop();
 				continue;
 			}
 			if(res != sat())
 			{
+				slv.pop();
 				break;
 			}
 		}

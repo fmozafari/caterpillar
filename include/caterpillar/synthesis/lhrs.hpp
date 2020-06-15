@@ -184,7 +184,7 @@ public:
               [&] (compute_level_action const& action){
                 if(ps.verbose)
                 {
-                  fmt::print("[i] compute level\n");
+                  fmt::print("[i] compute level with node {}\n", action.level[0].first);
                 }
                 compute_level_with_copies(action.level);
               },
@@ -193,7 +193,7 @@ public:
                 {
                   if(ps.verbose)
                   {
-                    fmt::print("[i] uncompute level\n");
+                    fmt::print("[i] uncompute level with node {}\n", action.level[0].first);
                   }
                   uncompute_level(action.level);
                 }
