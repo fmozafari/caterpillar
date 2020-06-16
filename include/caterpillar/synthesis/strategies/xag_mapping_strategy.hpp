@@ -260,7 +260,7 @@ public:
     auto fi  = get_fi(xag, drivers);
     auto it = steps().begin();
 
-    xag.foreach_node( [&]( auto node ) {
+    xag.foreach_gate( [&]( auto node ) {
       
       if ( xag.is_and( node ) || std::find( drivers.begin(), drivers.end(), node ) != drivers.end() )
       {
