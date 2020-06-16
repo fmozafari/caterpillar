@@ -84,9 +84,8 @@ inline void update_fi( node_t node, xag_network const& xag, std::vector<std::vec
     xag.foreach_fanin(node, [&]( auto si ) {
       fanin.push_back(xag.node_to_index(xag.get_node(si)));
     } );
-
-    
     fi[xag.node_to_index( node )] = sym_diff( fi[fanin[0]], fi[fanin[1]] );
+    assert(!fi[xag.node_to_index( node )].empty());
   }
 }
 
@@ -100,7 +99,7 @@ static inline  std::vector<std::vector<uint32_t>> get_fi (xag_network const& xag
   return fi;
 }
 
-inline  std::vector<cone_t> get_cones( node_t node, xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi )
+inline  std::vector<cone_t> get_cones( node_t node, xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi, bool include_root = true )
 {
   std::vector<cone_t> cones; 
 
@@ -151,7 +150,7 @@ inline  std::vector<cone_t> get_cones( node_t node, xag_network const& xag, std:
       fi[left].begin(), fi[left].end(), std::inserter(cones[1].target, cones[1].target.begin()));
     
     /* the first may be included */
-    if( is_included(fi[left], fi[right] ) )
+    if( include_root && is_included(fi[left], fi[right] ) )
     {
       /* add the top of the cone to the right */
       cones[1].target.push_back( cones[0].root ); 
@@ -228,7 +227,7 @@ static inline std::vector<std::vector<node_t>> get_levels( xag_network const& xa
 
   std::vector<std::vector<node_t>>levels (xag.depth());
                                                                  
-  xag.foreach_node( [&]( auto n ) {
+  xag.foreach_gate( [&]( auto n ) {
     if( xag.is_and(n) || std::find( drivers.begin(), drivers.end(), n ) != drivers.end() ) 
       levels[xag.level(n)-1].push_back(n);
   });
@@ -338,7 +337,7 @@ class xag_pebbling_mapping_strategy : public mapping_strategy<xag_network>
     auto drivers = detail::get_outputs(xag);
     auto fi = get_fi (xag, drivers);
 
-    xag.foreach_node([&] (auto node)
+    xag.foreach_gate([&] (auto node)
     {
       if(xag.is_and(node) || std::find(drivers.begin(), drivers.end(), node) != drivers.end())
       {
@@ -470,7 +469,8 @@ public:
       boost::dynamic_bitset<> visited (xag.size());
       for(auto n : lvl)
       {
-        auto cones = get_cones(n, xag, fi);
+        /* this strategy does not support symplification of an included fanin cone, hence the false flag */
+        auto cones = get_cones(n, xag, fi, false);
         if(xag.is_and(n))
         {
           /* modifies cones.leaves and cones.copies according to visited */

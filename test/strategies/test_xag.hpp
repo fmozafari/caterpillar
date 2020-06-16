@@ -376,6 +376,22 @@ static mockturtle::xag_network get_xag(uint const& val)
     auto n7 = xag.create_and(n6, x1);
     xag.create_po(n7);
   }
+  else if(val == 21)
+  {
+    auto x1 = xag.create_pi();
+    auto x2 = xag.create_pi();
+    auto x3 = xag.create_pi();
+    auto x4 = xag.create_pi();
+
+    auto n1 = xag.create_xor(x2, x3);
+    auto n2 = xag.create_xor(n1, x1);
+    auto n3 = xag.create_xor(n1, x4);
+    auto n4 = xag.create_and(n1, n2);
+    auto n5 = xag.create_and(n1, n3);
+    
+    xag.create_po(n5);
+    xag.create_po(n4);
+  }
   return xag;
 }
 

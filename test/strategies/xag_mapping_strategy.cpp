@@ -285,3 +285,14 @@ TEST_CASE("min depth synthesis parity buffer", "[XAG synthesis-20]")
   CHECK(xag_synthesis(xag_method::xag_pebb, 20, false) == true);
   #endif
 }
+TEST_CASE("min depth included cone", "[XAG synthesis-21]")
+{
+  CHECK(xag_synthesis(xag_method::xag_lowt, 21, false) == true);
+  CHECK(xag_synthesis(xag_method::xag_lowd, 21, false) == true);
+  #ifdef USE_iGRAPH
+  CHECK(xag_synthesis(xag_method::xag_dfit, 21, false) == true);
+  #endif
+  #ifdef USE_Z3
+  CHECK(xag_synthesis(xag_method::xag_pebb, 21, false) == true);
+  #endif
+}
