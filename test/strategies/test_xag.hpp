@@ -17,10 +17,13 @@
 namespace caterpillar::test
 {
 
-enum class xag_method { xag_lowt,
-                  xag_lowd,
-                  xag_dfit,
-                  xag_pebb };
+enum class xag_method { 
+  xag_lowt,
+  xag_lowt_fast,
+  xag_lowd,
+  xag_dfit,
+  xag_pebb 
+};
 
 
 static mockturtle::xag_network get_xag(uint const& val)
@@ -411,6 +414,16 @@ static bool xag_synthesis(xag_method const& m, uint const& num_xag, bool verbose
   if(m == xag_method::xag_lowt)
   {
     xag_mapping_strategy strategy;
+    logic_network_synthesis( qnet, xag, strategy, {}, ps, &st );
+    auto tt_xag = simulate<kitty::dynamic_truth_table>( xag, {pis});
+    const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+    auto tt_ntk = simulate<kitty::dynamic_truth_table>( *ntk, {pis});
+    if(verbose) write_unicode(qnet);
+    return (tt_xag == tt_ntk);
+  }
+  if(m == xag_method::xag_lowt_fast)
+  {
+    xag_fast_lowt_mapping_strategy strategy;
     logic_network_synthesis( qnet, xag, strategy, {}, ps, &st );
     auto tt_xag = simulate<kitty::dynamic_truth_table>( xag, {pis});
     const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
