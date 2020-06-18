@@ -293,6 +293,47 @@ public:
   }
 };
 
+class xag_fast_lowt_mapping_strategy : public mapping_strategy<xag_network>
+{
+
+public:
+  bool compute_steps( xag_network const& ntk ) override
+  {
+    mockturtle::topo_view xag {ntk};
+
+    auto drivers = detail::get_outputs(xag);                                                     
+    auto fi  = get_fi(xag, drivers);
+    auto levels = get_levels(xag, drivers);
+    auto it = steps().begin();
+
+    for(auto lvl : levels)
+    { 
+      /* store two action sets for each node in the level */
+      std::vector<std::pair<uint32_t, std::vector<cone_t>>> node_and_action;      
+      std::vector<std::pair<uint32_t, std::vector<cone_t>>> to_be_uncomputed;
+
+      for(auto n : lvl)
+      {
+        /* this strategy does not support symplification of an included fanin cone, hence the false flag */
+        auto cones = get_cones(n, xag, fi, false);
+        node_and_action.push_back({n, cones});
+      }
+
+      it = steps().insert(it, {lvl[0], compute_level_action{node_and_action}});
+      it = it + 1;
+      
+      for(auto node : node_and_action)
+      {
+        if(std::find(drivers.begin(), drivers.end(), node.first) == drivers.end())
+        to_be_uncomputed.push_back(node);
+      }
+      it = steps().insert(it, {lvl[0], uncompute_level_action{to_be_uncomputed}});
+    }
+
+    return true;
+  }
+};
+
 #ifdef USE_Z3
 /*!
   \verbatim embed:rst
@@ -518,7 +559,7 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
 
     if (lvl.size()==1)
     {
-      return {{lvl[0], get_cones(lvl[0], xag, fi)}};
+      return {{lvl[0], get_cones(lvl[0], xag, fi, false)}};
     }
 
     level_info_t max_clique;
@@ -530,7 +571,7 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
     for(uint32_t i = 0; i < lvl.size(); i++)
     {  
       masks[i].resize(xag.size());
-      auto cones = get_cones(lvl[i], xag, fi);  
+      auto cones = get_cones(lvl[i], xag, fi, false);  
       node_to_cones[lvl[i]] = cones;
       //fmt::print("\tnode {} with leaves {} and {} \n", lvl[i], fmt::join(cones[0].leaves, " "), fmt::join(cones[1].leaves, " "));
       for (auto l : cones[0].leaves)
