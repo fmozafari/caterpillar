@@ -549,31 +549,16 @@ public:
 class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
 {
 
-  //checks compatibility between nodes in one level and builds the graph
-  level_info_t largest_set_compatible_nodes(
-                    std::vector<node_t> const& lvl,
-                    mockturtle::xag_network const& xag,  
-                    std::vector<std::vector<uint32_t>> const& fi )
+  std::vector<boost::dynamic_bitset<>> get_mask( 
+  std::vector<uint64_t> const& lvl, 
+  xag_network const& xag, 
+  std::vector<std::vector<uint32_t>> const& fi)
   {
-    assert(!lvl.empty());
-
-    if (lvl.size()==1)
-    {
-      return {{lvl[0], get_cones(lvl[0], xag, fi, false)}};
-    }
-
-    level_info_t max_clique;
-    std::unordered_map<node_t, std::vector<cone_t>> node_to_cones;
-
-    /* set the masks for all the nodes in the level */
-    /* has set bit if the corresponding leaf is present */
     std::vector<boost::dynamic_bitset<>> masks (lvl.size());
     for(uint32_t i = 0; i < lvl.size(); i++)
     {  
       masks[i].resize(xag.size());
       auto cones = get_cones(lvl[i], xag, fi, false);  
-      node_to_cones[lvl[i]] = cones;
-      //fmt::print("\tnode {} with leaves {} and {} \n", lvl[i], fmt::join(cones[0].leaves, " "), fmt::join(cones[1].leaves, " "));
       for (auto l : cones[0].leaves)
       {
         assert(masks[i].size() > l);
@@ -585,9 +570,14 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
         masks[i].set(l);
       }
     }
+    return masks;
+  }
+
+  void build_compatibility_graph(igraph_t* g, std::vector<uint64_t> const& lvl, xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi)
+  {
+    auto conflicts = get_mask(lvl, xag, fi);
 
     /* build the graph comparing the masks */
-    igraph_t graph;
     igraph_integer_t nv = lvl.size();
     igraph_vector_t edges;
     igraph_vector_init(&edges, 0);
@@ -595,7 +585,7 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
     {
       for (uint32_t j = 0; j < i; j++ )
       {
-        auto merge = masks[i] & masks[j];
+        auto merge = conflicts[i] & conflicts[j];
         if ( merge.none())
         {
           igraph_vector_push_back(&edges , i);
@@ -603,52 +593,112 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
         }
       }
     }
-    igraph_create( &graph, &edges, nv, /*undirected*/0);
+    igraph_create( g, &edges, nv, /*undirected*/0);
 
-    /* get largest clique O(3^(|V|/3)) worst case*/
-    if (igraph_ecount(&graph) > 0)
+    for( auto i = 0u; i < lvl.size(); i++)
     {
-      igraph_vector_ptr_t cliques;
-      igraph_vector_ptr_init(&cliques, 0);
-      igraph_largest_cliques(&graph, &cliques);
-
-      //get the first largest clique
-      igraph_vector_t *v = (igraph_vector_t*)VECTOR(cliques)[0];
-
-      for (int j = 0; j < igraph_vector_size(v); j++)
-      {
-        auto e = VECTOR(*v)[j];
-        assert(e<lvl.size());
-        auto& node = lvl[e];
-        max_clique.push_back({node, node_to_cones[node]});
-      }
-
-      igraph_vector_destroy(v);
-      igraph_free(v);
+      SETVAN(g, "node", i, lvl[i]);
     }
-    else //return the entire level as there is no way of optimizing without copying
-    {
-      for (auto node : lvl)
-      {
-        max_clique.push_back({node, node_to_cones[node]});
-      }
-    }
-
-    igraph_destroy(&graph);
-    return max_clique;
   }
 
+  std::vector<std::vector<uint32_t>> clique_cover( igraph_t* const graph)
+  {
+    std::vector<std::vector<uint32_t>> cover;
+    igraph_vector_ptr_t cliques; 
+    igraph_t _g; 
+  
+    igraph_vector_ptr_init(&cliques, 0);
+    igraph_copy(&_g, graph);
+    
+
+    while(igraph_vcount(&_g) != 0)
+    {
+      igraph_vector_ptr_clear(&cliques);
+      std::vector<uint32_t> clique;
+
+      igraph_largest_cliques(&_g, &cliques);
+      igraph_vector_t *v = (igraph_vector_t*)VECTOR(cliques)[0];
+      for (int j = 0; j < igraph_vector_size(v); j++)
+      {
+        auto vid = VECTOR(*v)[j];
+        auto node = VAN(&_g, "node", vid);
+        clique.push_back(node);
+      }
+      cover.push_back(clique);
+
+      /* removes the vertices of the largest clique       
+      * it changes the ids but is fine if done at once
+      * numerical vertex attributes should not be changed */
+      igraph_delete_vertices(&_g, igraph_vss_vector(v));
+      igraph_vector_destroy(v);
+    }
+
+    igraph_vector_ptr_destroy(&cliques);
+    return cover;
+  }
+
+  void decompose_graph_cc(igraph_t* graph, igraph_vector_ptr_t* subgraphs, int size_limit)
+  {
+
+    igraph_vector_ptr_t components; igraph_vector_ptr_init(&components, 0);
+    IGRAPH_VECTOR_PTR_SET_ITEM_DESTRUCTOR(&components, igraph_destroy);
+
+    igraph_decompose(graph, &components, IGRAPH_WEAK, -1, 1);
+    auto num_components = igraph_vector_ptr_size(&components);
+    
+    igraph_t* sub;
+    for (int i = 0; i < num_components; i++) 
+    {
+      auto comp_size = igraph_vcount((igraph_t *)VECTOR(components)[i]);
+      if(comp_size > size_limit)
+      {
+        auto from = 0;
+        auto rem_size = comp_size;
+        while (rem_size > size_limit)
+        {
+          auto to = from + size_limit - 1;
+          sub = igraph_Calloc(1, igraph_t);
+          igraph_induced_subgraph(graph, sub, igraph_vss_seq(from, to), IGRAPH_SUBGRAPH_CREATE_FROM_SCRATCH);
+          igraph_vector_ptr_push_back(subgraphs, sub);
+      
+          rem_size = rem_size-size_limit;
+          from = to + 1;
+        }
+        if(rem_size > 0)
+        {
+          sub = igraph_Calloc(1, igraph_t);
+          igraph_induced_subgraph(graph, sub, igraph_vss_seq(from, from+rem_size-1), IGRAPH_SUBGRAPH_CREATE_FROM_SCRATCH);
+          igraph_vector_ptr_push_back (subgraphs, sub);
+        }
+
+      }
+      else
+      {
+        sub = igraph_Calloc(1, igraph_t);
+        igraph_copy(sub, (igraph_t *)VECTOR(components)[i]);
+        igraph_vector_ptr_push_back(subgraphs, sub );
+      } 
+    }
+    igraph_vector_ptr_destroy_all(&components);
+  }
+
+  /* records the largest clique size that is the maximum amount of qubits added by a Tdepth=1 implementation 
+  as smaller cliques can reuse it */
   uint32_t qubits_offset = 0;
+  uint32_t size_limit;
 
 public: 
 
-  uint32_t get_offset()
-  {
-    return qubits_offset;
-  }
+  xag_depth_fit_mapping_strategy(uint32_t max_size_comp_graph = 100)
+  : size_limit(max_size_comp_graph) {}
+
+  uint32_t get_offset() { return qubits_offset;}
 
   bool compute_steps( xag_network const& ntk ) override
   {
+    /* set up graph attribute handler */
+    igraph_i_set_attribute_table(&igraph_cattribute_table);
+
     // the strategy proceeds in topological order
     mockturtle::topo_view xag {ntk};
 
@@ -665,32 +715,48 @@ public:
     for(auto lvl : levels)
     {
       assert(lvl.size()!=0);
-      auto tmp_lvl = lvl;
 
-      while (!tmp_lvl.empty())
-      {
-        level_info_t clique = largest_set_compatible_nodes(tmp_lvl, xag, fi);
-        level_info_t to_be_uncomputed;
+      igraph_t graph; 
+      igraph_vector_ptr_t subgraphs; 
+      igraph_vector_ptr_init(&subgraphs, 0);
 
-        it = steps().insert(it, {tmp_lvl[0], compute_level_action{clique}});
-        it = it + 1;
+      build_compatibility_graph(&graph, lvl, xag, fi);
       
-        for(auto& node : clique)
+      decompose_graph_cc(&graph, &subgraphs, size_limit);
+
+      for(auto i = 0 ; i < igraph_vector_ptr_size(&subgraphs); i++)
+      {
+        auto cover = clique_cover((igraph_t *)VECTOR(subgraphs)[i]);
+      
+        for(auto clique : cover)
         {
-          if(std::find(drivers.begin(), drivers.end(), node.first) == drivers.end())
-            to_be_uncomputed.push_back(node);
+          level_info_t to_be_computed;
+          level_info_t to_be_uncomputed;
+
+          for(auto n : clique)
+          {
+            to_be_computed.push_back({n, get_cones(n, xag, fi, false)});
+          }
+
+          it = steps().insert(it, {clique[0], compute_level_action{to_be_computed}});
+          it = it + 1;
+        
+          for(auto& n : clique)
+          {
+            if(std::find(drivers.begin(), drivers.end(), n) == drivers.end())
+              to_be_uncomputed.push_back({n, get_cones(n, xag, fi, false)});
+          }
+
+          it = steps().insert(it, {clique[0], uncompute_level_action{to_be_uncomputed}});
+
+          if(clique.size()>qubits_offset)
+            qubits_offset = clique.size();
         }
-
-        it = steps().insert(it, {tmp_lvl[0], uncompute_level_action{to_be_uncomputed}});
-
-        for (auto n : clique)
-        {
-          tmp_lvl.erase(std::find(tmp_lvl.begin(), tmp_lvl.end(), n.first));
-        }
-
-        if(clique.size()>qubits_offset)
-          qubits_offset = clique.size();
       }
+
+      IGRAPH_VECTOR_PTR_SET_ITEM_DESTRUCTOR(&subgraphs, igraph_destroy);
+      igraph_vector_ptr_destroy_all(&subgraphs);
+      igraph_destroy(&graph);
     }
     return true;
   }
