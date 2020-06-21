@@ -1,4 +1,5 @@
 #include <caterpillar/synthesis/lhrs.hpp>
+#include <caterpillar/synthesis/xag_tracer.hpp>
 #include <caterpillar/synthesis/strategies/xag_mapping_strategy.hpp>
 #include <caterpillar/verification/circuit_to_logic_network.hpp>
 #include <mockturtle/networks/xag.hpp>
@@ -13,7 +14,7 @@
 #include <mockturtle/algorithms/simulation.hpp>
 #include <kitty/dynamic_truth_table.hpp>
 #include <fmt/format.h>
-
+#pragma once
 namespace caterpillar::test
 {
 
@@ -26,7 +27,7 @@ enum class xag_method {
 };
 
 
-static mockturtle::xag_network get_xag(uint const& val)
+inline static mockturtle::xag_network get_xag(uint const& val)
 {
   mockturtle::xag_network xag;
   if(val == 1)
@@ -464,6 +465,88 @@ static bool xag_synthesis(xag_method const& m, uint const& num_xag, bool verbose
     auto tt_ntk = simulate<kitty::dynamic_truth_table>( *ntk, {pis} );
     if(verbose) write_unicode(qnet);
     return (tt_xag == tt_ntk);
+    #endif
+    return false;
+  }
+  return false;
+}
+
+static bool test_tracer(xag_method const& m, uint const& num_xag, bool verbose = false, pebbling_mapping_strategy_params const& peb_ps = {} )
+{
+
+  using namespace caterpillar;
+  using namespace caterpillar::test;
+  using namespace mockturtle;
+  using namespace tweedledum;
+
+  xag_network xag = get_xag(num_xag);
+  netlist<stg_gate> qnet;
+
+  logic_network_synthesis_params psl;
+  xag_tracer_params ps;
+  xag_tracer_stats st;
+  ps.verbose = verbose;
+  psl.verbose = verbose;
+
+  if(m == xag_method::xag_lowt)
+  {
+    xag_mapping_strategy strategy;
+    logic_network_synthesis( qnet, xag, strategy, {}, psl);
+    auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, false);
+
+    xag_mapping_strategy strategy2;
+    ps.low_tdepth_AND = false;
+    xag_tracer(xag, strategy2, ps, &st);
+    return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
+  }
+  else if(m == xag_method::xag_lowt_fast)
+  {
+    xag_fast_lowt_mapping_strategy strategy;
+    logic_network_synthesis( qnet, xag, strategy, {}, psl);
+    auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, false);
+
+    xag_fast_lowt_mapping_strategy strategy2;
+    ps.low_tdepth_AND = false;
+    xag_tracer(xag, strategy2, ps, &st);
+    return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
+  }
+  else if(m == xag_method::xag_lowd)
+  {
+    xag_low_depth_mapping_strategy strategy;
+    logic_network_synthesis( qnet, xag, strategy, {}, psl);
+    auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, true);
+
+
+    xag_low_depth_mapping_strategy strategy2;
+    ps.low_tdepth_AND = true;
+    xag_tracer(xag, strategy2, ps, &st);
+    return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
+  }
+  else if (m == xag_method::xag_dfit)
+  {
+    #ifdef USE_iGRAPH
+    xag_depth_fit_mapping_strategy strategy;
+    logic_network_synthesis( qnet, xag, strategy, {}, psl);
+    auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, true);
+
+    xag_depth_fit_mapping_strategy strategy2;
+    ps.low_tdepth_AND = true;
+    xag_tracer(xag, strategy2, ps, &st);
+    return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
+    #endif
+    return false;
+  }
+  else if(m== xag_method::xag_pebb)
+  {
+    #ifdef USE_Z3
+    xag_pebbling_mapping_strategy strategy (peb_ps);
+    logic_network_synthesis( qnet, xag, strategy, {}, psl);
+    auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, false);
+
+    xag_pebbling_mapping_strategy strategy2 (peb_ps);
+    ps.low_tdepth_AND = false;
+    xag_tracer(xag, strategy2, ps, &st);
+    return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
     #endif
     return false;
   }

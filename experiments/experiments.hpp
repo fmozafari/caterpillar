@@ -440,52 +440,6 @@ struct xag_stats
   uint32_t mult_width = 0;
 };
 
-/* finds T-count, T-depth and #CNOT for {X, CNOT, CCNOT} circuits where all CCNOT are computed on a clean helper line */
-inline std::tuple<int, int, int> qc_stats(tweedledum::netlist<caterpillar::stg_gate> const& ntk, bool use_tdepth1 = false)
-{
-  auto Tcount = 0;
-  auto CNOT = 0;
 
-  std::vector<int> depths (ntk.num_qubits());
-  std::vector<bool> mask (ntk.num_qubits());
-
-
-  ntk.foreach_cgate([&] (auto& gate)
-  {
-    assert(gate.gate.num_controls() <= 2);
-    auto t = gate.gate.targets()[0];
-
-    if (gate.gate.num_controls() == 1)
-    { 
-      CNOT++;
-
-      auto c = gate.gate.controls()[0];
-      depths[t] = std::max(depths[c], depths[t]);
-    }
-    else if(gate.gate.num_controls() == 2)
-    {
-      auto c1 = gate.gate.controls()[0];
-      auto c2 = gate.gate.controls()[1];
-      if (!mask[t])
-      {
-
-        depths[t] = use_tdepth1 ? std::max(std::max(depths[t] + 1, depths[c1]+1), depths[c2]+1)  : std::max(std::max(depths[t] + 2, depths[c1]+1), depths[c2]+1);
-
-        gate.gate.foreach_control([&] (auto& c)
-        {
-          depths[c] = depths[c] + 1;
-        });
-        
-        Tcount = Tcount + 4;
-      }
-      mask[t] = !(mask[t]);
-    }
-    
-  });
-
-
-  auto Tdepth = depths[std::max_element(depths.begin(), depths.end()) - depths.begin()];
-  return { CNOT, Tcount, Tdepth}; 
-}
 
 } // namespace experiments
