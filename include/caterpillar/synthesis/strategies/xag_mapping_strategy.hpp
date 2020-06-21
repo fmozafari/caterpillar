@@ -726,6 +726,7 @@ public:
 
       for(auto i = 0 ; i < igraph_vector_ptr_size(&subgraphs); i++)
       {
+        assert(igraph_vcount((igraph_t *)VECTOR(subgraphs)[i]) <= size_limit);
         auto cover = clique_cover((igraph_t *)VECTOR(subgraphs)[i]);
       
         for(auto clique : cover)
