@@ -637,7 +637,7 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
     return cover;
   }
 
-  void decompose_graph_cc(igraph_t* graph, igraph_vector_ptr_t* subgraphs, int size_limit)
+  void decompose_graph_cc(igraph_t* graph, igraph_vector_ptr_t* subgraphs, uint32_t size_limit)
   {
 
     igraph_vector_ptr_t components; igraph_vector_ptr_init(&components, 0);
@@ -685,11 +685,11 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<xag_network>
   /* records the largest clique size that is the maximum amount of qubits added by a Tdepth=1 implementation 
   as smaller cliques can reuse it */
   uint32_t qubits_offset = 0;
-  uint32_t size_limit;
+  uint32_t size_limit= std::numeric_limits<uint>::max();
 
 public: 
 
-  xag_depth_fit_mapping_strategy(uint32_t max_size_comp_graph = 100)
+  xag_depth_fit_mapping_strategy(uint32_t max_size_comp_graph = std::numeric_limits<uint>::max())
   : size_limit(max_size_comp_graph) {}
 
   uint32_t get_offset() { return qubits_offset;}

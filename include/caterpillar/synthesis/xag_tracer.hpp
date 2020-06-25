@@ -511,6 +511,7 @@ private:
         {
           add_gate(tweedledum::gate::cx, tweedledum::qubit_id( node_to_qubit[c].top() ), tcp );
         }
+        release_ancilla(tcp);
       }
     }
   }
