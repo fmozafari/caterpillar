@@ -536,6 +536,7 @@ private:
 
     std::map<node_t, std::vector<uint32_t>> id_to_tcp;
     compute_copies(id_to_tcp, level);
+    std::vector<uint32_t> qubit_offset;
     
     for(auto node : level)
     {      
@@ -558,6 +559,16 @@ private:
       }
 
       auto target = request_ancilla();
+      //  automatically take into account the extra qubit needed 
+      //  for the AND implementation with T-depth = 1
+      if (ntk.is_and(id))
+      { 
+        if (ps.low_tdepth_AND)
+        {
+          qubit_offset.push_back(request_ancilla());
+        }
+      }
+
       compute_and_xor_from_controls(id, pol_controls, target);
       node_to_qubit[id].push(target);
 
@@ -578,6 +589,10 @@ private:
       node_to_qubit[node.second[1].root].pop();
 
     }
+    assert(qubit_offset.size() <= level.size());
+    
+    for (auto q : qubit_offset)
+      release_ancilla(q);
     remove_copies(id_to_tcp, level);
 
   }
