@@ -221,7 +221,7 @@ static inline steps_xag_t gen_steps( node_t node, std::vector<cone_t> cones, boo
 }
 
 
-static inline std::vector<std::vector<node_t>> get_levels( xag_network const& xag_t, std::vector<node_t> const& drivers)
+static inline std::vector<std::vector<node_t>> get_levels_asap( xag_network const& xag_t, std::vector<node_t> const& drivers)
 {
   mockturtle::depth_view<xag_network, xag_depth_cost<xag_network>> xag {xag_t};
 
@@ -235,6 +235,75 @@ static inline std::vector<std::vector<node_t>> get_levels( xag_network const& xa
   return levels;
 }
 
+/* get nodes per level (ALAP) */
+static inline std::vector<std::vector<node_t>> get_levels_alap( xag_network const& xag_t, std::vector<node_t> const& drivers)
+{
+  /* AND nodes per level */
+  mockturtle::depth_view<xag_network, xag_depth_cost<xag_network>> xag {xag_t};
+
+  std::vector<std::vector<node_t>>levels (xag.depth());
+
+  /* compute AND inputs of each nodes */
+  std::vector<std::vector<node_t>> fanin_set (xag.size());
+
+  xag.foreach_gate( [&]( auto n ) {
+    if(xag.is_and(n) || (std::find(drivers.begin(), drivers.end(), n) != drivers.end()) )
+    {
+      fanin_set[n] = {n};
+    }
+    else 
+    {
+      std::vector<uint32_t> fanin;
+      xag.foreach_fanin(n, [&]( auto si ) {
+        fanin.push_back(xag.get_node(si));
+      });
+      
+      std::copy(fanin_set[fanin[1]].begin(),fanin_set[fanin[1]].end(), std::back_inserter(fanin_set[n]));
+
+      std::remove_copy_if( fanin_set[fanin[0]].begin(),fanin_set[fanin[0]].end(), std::back_inserter(fanin_set[n]), [&](auto i) 
+      {
+        return std::find(fanin_set[fanin[1]].begin(), fanin_set[fanin[1]].end(), i) != fanin_set[fanin[1]].end();
+      });
+
+    }
+  });
+
+  /* compute parents of and nodes */
+  node_map<std::vector<uint32_t>, xag_network> parents( xag );
+  xag.foreach_gate( [&]( auto const& n ) {
+    if ( !( xag.is_and( n ) || (std::find(drivers.begin(), drivers.end(), n) != drivers.end()) ) ) return;
+
+    xag.foreach_fanin( n, [&]( auto const& f ) {
+      const auto child = xag.get_node( f );
+      for(auto l : fanin_set[child])
+      {
+        parents[l].push_back(n);
+      }
+    });
+  } );
+
+  /* reverse TOPO */
+  node_map<uint32_t, xag_network> level( xag );
+  for ( auto n = xag.size() - 1u; n > xag.num_pis(); --n )
+  {
+    if ( !( xag.is_and( n ) || (std::find(drivers.begin(), drivers.end(), n) != drivers.end()) ) ) continue;
+    
+    if ( parents[n].empty() )
+    {
+      const auto l = xag.depth() - 1u;
+      levels[l].push_back( n );
+      level[n] = l;
+    }
+    else
+    {
+      const auto l = level[*std::min_element( parents[n].begin(), parents[n].end(), [&]( auto n1, auto n2 ) { return level[n1] < level[n2]; } )] - 1u;
+      levels[l].push_back( n );
+      level[n] = l;
+    }
+  }
+
+  return levels;
+}
 
 /*!
   \verbatim embed:rst
@@ -303,7 +372,7 @@ public:
 
     auto drivers = detail::get_outputs(xag);                                                     
     auto fi  = get_fi(xag, drivers);
-    auto levels = get_levels(xag, drivers);
+    auto levels = get_levels_asap(xag, drivers);
     auto it = steps().begin();
 
     for(auto lvl : levels)
@@ -460,6 +529,7 @@ public:
 */
 class xag_low_depth_mapping_strategy : public mapping_strategy<xag_network>
 {
+
   void eval_copies(std::vector<cone_t>& cones, boost::dynamic_bitset<>& visited)
   {
     for(auto& cone : cones) 
@@ -482,9 +552,13 @@ class xag_low_depth_mapping_strategy : public mapping_strategy<xag_network>
     }
   }
 
+  bool _alap;
 
 public: 
   
+  xag_low_depth_mapping_strategy (bool use_alap = false)
+  : _alap(use_alap){}
+
   bool compute_steps( xag_network const& ntk ) override
   {
     // the strategy proceeds in topological order and level by level
@@ -496,7 +570,7 @@ public:
     auto fi = get_fi(xag, drivers);
 
     /* each m_level is filled with AND nodes and XOR outputs */
-    auto levels = get_levels(xag, drivers);
+    auto levels = _alap ? get_levels_alap(xag, drivers) : get_levels_asap(xag, drivers);
     auto it = steps().begin();
 
     for(auto lvl : levels){ if(lvl.size() != 0)
@@ -708,7 +782,7 @@ public:
     
     /* each m_level is filled with AND nodes and XOR outputs */
     /* fi is propagated */
-    auto levels = get_levels(xag, drivers);                              
+    auto levels = get_levels_asap(xag, drivers);                              
 
     auto it = steps().begin();
 

@@ -512,12 +512,12 @@ static bool test_tracer(xag_method const& m, uint const& num_xag, bool verbose =
   }
   else if(m == xag_method::xag_lowd)
   {
-    xag_low_depth_mapping_strategy strategy;
+    xag_low_depth_mapping_strategy strategy (true);
     logic_network_synthesis( qnet, xag, strategy, {}, psl);
     auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, true);
 
 
-    xag_low_depth_mapping_strategy strategy2;
+    xag_low_depth_mapping_strategy strategy2 (true);
     ps.low_tdepth_AND = true;
     xag_tracer(xag, strategy2, ps, &st);
     return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
