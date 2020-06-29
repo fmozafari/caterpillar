@@ -18,11 +18,13 @@ struct cone_t
 {
   uint32_t root;
   std::vector<uint32_t> leaves;
-  bool complemented;
+  bool complemented = false;
 
   std::vector<uint32_t> target = {};
   std::vector<uint32_t> copies = {};
 
+  cone_t(){}
+  
   cone_t( uint32_t root, std::vector<uint32_t> leaves, bool complemented = false )
       : root(root), leaves(leaves), complemented(complemented) {};
 

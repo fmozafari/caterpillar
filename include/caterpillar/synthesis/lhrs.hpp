@@ -373,6 +373,21 @@ private:
         return;
       }
     }
+    if constexpr ( mt::has_is_nary_xor_v<LogicNetwork> )
+    {
+      if ( ntk.is_nary_xor( node ) )
+      {
+        
+        std::vector<uint32_t> controls;
+        controls.reserve( ntk.fanin_size(node) );
+        ntk.foreach_fanin(node, [&] (auto f)
+        {
+          controls.push_back(ntk.get_node(f));
+        });
+        compute_big_xor( t, controls);
+        return;
+      }
+    }
     if constexpr ( mt::has_is_xor3_v<LogicNetwork> )
     {
       if ( ntk.is_xor3( node ) )

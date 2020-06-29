@@ -1,8 +1,11 @@
 #include <caterpillar/synthesis/lhrs.hpp>
 #include <caterpillar/synthesis/xag_tracer.hpp>
 #include <caterpillar/synthesis/strategies/xag_mapping_strategy.hpp>
+#include <caterpillar/synthesis/strategies/abstract_xag_mapping_strategy.hpp>
+
 #include <caterpillar/verification/circuit_to_logic_network.hpp>
 #include <mockturtle/networks/xag.hpp>
+#include <mockturtle/algorithms/cleanup.hpp>
 #include <tweedledum/networks/netlist.hpp>
 #include <tweedledum/io/write_unicode.hpp>
 #include <tweedledum/io/write_projectq.hpp>
@@ -23,7 +26,8 @@ enum class xag_method {
   xag_lowt_fast,
   xag_lowd,
   xag_dfit,
-  xag_pebb 
+  xag_pebb ,
+  abs_xag_lowt
 };
 
 
@@ -89,18 +93,18 @@ inline static mockturtle::xag_network get_xag(uint const& val)
   }
   else if(val == 5)
   {
-    auto x0 = xag.create_pi();
+    auto x1 = xag.create_pi();
+    auto x2 = xag.create_pi();
     auto x3 = xag.create_pi();
     auto x4 = xag.create_pi();
     auto x5 = xag.create_pi();
-    auto x6 = xag.create_pi();
-    auto n10 = xag.create_xor(x6, x0);
-    auto n9 = xag.create_xor(x5, x3);
-    auto n16 = xag.create_xor(n10, n9);
-    auto n20 = xag.create_xor(n16, x4);
-    auto n21 = xag.create_xor(n20, x5);
-    auto n32 = xag.create_and(n16, n21);
-    xag.create_po(n32);
+    auto n6 = xag.create_xor(x5, x1);
+    auto n7 = xag.create_xor(x4, x2);
+    auto n8 = xag.create_xor(n6, n7);
+    auto n9 = xag.create_xor(n8, x3);
+    auto n10 = xag.create_xor(n9, x4);
+    auto n11 = xag.create_and(n8, n10);
+    xag.create_po(n11);
   }
   else if(val == 6)
   {
@@ -468,6 +472,18 @@ static bool xag_synthesis(xag_method const& m, uint const& num_xag, bool verbose
     #endif
     return false;
   }
+  else if(m== xag_method::abs_xag_lowt)
+  {
+    abstract_xag_mapping_strategy strategy;
+    const auto abs_xag = cleanup_dangling<xag_network, abstract_xag_network>( xag );
+    logic_network_synthesis( qnet, abs_xag, strategy, {}, ps, &st );
+    auto tt_xag = simulate<kitty::dynamic_truth_table>( abs_xag, {pis} );
+    const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+    auto tt_ntk = simulate<kitty::dynamic_truth_table>( *ntk, {pis} );
+    if(verbose) write_unicode(qnet);
+    return (tt_xag == tt_ntk);
+   
+  }
   return false;
 }
 
@@ -550,6 +566,7 @@ static bool test_tracer(xag_method const& m, uint const& num_xag, bool verbose =
     #endif
     return false;
   }
+  
   return false;
 }
 
