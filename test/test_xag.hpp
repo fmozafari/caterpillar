@@ -27,9 +27,11 @@ enum class xag_method {
   xag_lowd,
   xag_dfit,
   xag_pebb ,
-  abs_xag_lowt
+  abs_xag_lowt,
+  abs_xag_lowt_fast,
+  abs_xag_lowd,
+  abs_xag_lowd_noc
 };
-
 
 inline static mockturtle::xag_network get_xag(uint const& val)
 {
@@ -484,6 +486,40 @@ static bool xag_synthesis(xag_method const& m, uint const& num_xag, bool verbose
     return (tt_xag == tt_ntk);
    
   }
+  else if(m== xag_method::abs_xag_lowt_fast)
+  {
+    abstract_xag_fast_lowt_mapping_strategy strategy;
+    const auto abs_xag = cleanup_dangling( cleanup_dangling<xag_network, abstract_xag_network>( xag ) );
+    logic_network_synthesis( qnet, abs_xag, strategy, {}, ps, &st );
+    auto tt_xag = simulate<kitty::dynamic_truth_table>( abs_xag, {pis} );
+    const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+    auto tt_ntk = simulate<kitty::dynamic_truth_table>( *ntk, {pis} );
+    if(verbose) write_unicode(qnet);
+    return (tt_xag == tt_ntk);
+   
+  }
+  else if(m== xag_method::abs_xag_lowd)
+  {
+    abstract_xag_low_depth_mapping_strategy strategy (false);
+    const auto abs_xag = cleanup_dangling( cleanup_dangling<xag_network, abstract_xag_network>( xag ) );
+    logic_network_synthesis( qnet, abs_xag, strategy, {}, ps, &st );
+    auto tt_xag = simulate<kitty::dynamic_truth_table>( abs_xag, {pis} );
+    const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+    auto tt_ntk = simulate<kitty::dynamic_truth_table>( *ntk, {pis} );
+    if(verbose) write_unicode(qnet);
+    return (tt_xag == tt_ntk);
+  }
+  else if(m== xag_method::abs_xag_lowd_noc)
+  {
+    abstract_xag_depth_fit_mapping_strategy strategy;
+    const auto abs_xag = cleanup_dangling( cleanup_dangling<xag_network, abstract_xag_network>( xag ) );
+    logic_network_synthesis( qnet, abs_xag, strategy, {}, ps, &st );
+    auto tt_xag = simulate<kitty::dynamic_truth_table>( abs_xag, {pis} );
+    const auto ntk = circuit_to_logic_network<xag_network, netlist<stg_gate>>( qnet, st.i_indexes, st.o_indexes );
+    auto tt_ntk = simulate<kitty::dynamic_truth_table>( *ntk, {pis} );
+    if(verbose) write_unicode(qnet);
+    return (tt_xag == tt_ntk);
+  }
   return false;
 }
 
@@ -565,6 +601,56 @@ static bool test_tracer(xag_method const& m, uint const& num_xag, bool verbose =
     return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
     #endif
     return false;
+  }
+  else if(m== xag_method::abs_xag_lowt)
+  {
+    abstract_xag_mapping_strategy strategy;
+    const auto abs_xag = cleanup_dangling( cleanup_dangling<xag_network, abstract_xag_network>( xag ) );
+    logic_network_synthesis( qnet, abs_xag, strategy, {}, psl );
+    auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, false);
+
+    abstract_xag_mapping_strategy strategy2;
+    ps.low_tdepth_AND = false;
+    xag_tracer(abs_xag, strategy2, ps, &st);
+    return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
+  }
+  else if(m== xag_method::abs_xag_lowt_fast)
+  {
+    abstract_xag_fast_lowt_mapping_strategy strategy;
+    const auto abs_xag = cleanup_dangling( cleanup_dangling<xag_network, abstract_xag_network>( xag ) );
+    logic_network_synthesis( qnet, abs_xag, strategy, {}, psl );
+    auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, false);
+
+    abstract_xag_fast_lowt_mapping_strategy strategy2;
+    ps.low_tdepth_AND = false;
+    xag_tracer(abs_xag, strategy2, ps, &st);
+    return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
+  }
+  else if(m== xag_method::abs_xag_lowd)
+  {
+    abstract_xag_low_depth_mapping_strategy strategy (false);
+    const auto abs_xag = cleanup_dangling( cleanup_dangling<xag_network, abstract_xag_network>( xag ) );
+    logic_network_synthesis( qnet, abs_xag, strategy, {}, psl );
+    auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, true);
+
+    abstract_xag_low_depth_mapping_strategy strategy2 (false);
+    ps.low_tdepth_AND = true;
+    xag_tracer(abs_xag, strategy2, ps, &st);
+    return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
+    
+  }
+  else if(m== xag_method::abs_xag_lowd_noc)
+  {
+    abstract_xag_depth_fit_mapping_strategy strategy;
+    const auto abs_xag = cleanup_dangling( cleanup_dangling<xag_network, abstract_xag_network>( xag ) );
+    logic_network_synthesis( qnet, abs_xag, strategy, {}, psl );
+    auto [CNOT, T_count, T_depth] = caterpillar::detail::qc_stats(qnet, true);
+
+    abstract_xag_depth_fit_mapping_strategy strategy2;
+    ps.low_tdepth_AND = true;
+    xag_tracer(abs_xag, strategy2, ps, &st);
+    return ( (CNOT == st.CNOT_count) && (T_count == st.T_count) && (T_depth == st.T_depth) );
+
   }
   
   return false;

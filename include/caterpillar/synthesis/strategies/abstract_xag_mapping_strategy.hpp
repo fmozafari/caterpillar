@@ -33,69 +33,12 @@ namespace caterpillar
 {
 using abstract_xag_network = mockturtle::abstract_xag_network;
 using abs_node_t = abstract_xag_network::node;
+using abs_steps_xag_t = std::vector<std::pair<abs_node_t, mapping_strategy_action>>;
 
-#ifdef false
-inline std::vector<uint32_t> sym_diff(std::vector<uint32_t> first, std::vector<uint32_t> second)
-{
-  std::vector<uint32_t> diff;
-  /* this one works on sorted ranges */
-  for(int i = 0; i< (int)(first.size()) - 1; i++)
-    assert(first[i] < first[i+1]);
-  
-  for(int i = 0; i< (int)(second.size() - 1); i++)
-    assert(second[i] < second[i+1]);
-  
-  std::set_symmetric_difference( first.begin(), first.end(), second.begin(), second.end(), std::back_inserter(diff) );
-  return diff;
-}
-
-inline bool is_included(std::vector<uint32_t> first, std::vector<uint32_t> second)
-{
-  /* if second is included in first */
-  bool is_included = true;
-  for(auto l : first)
-  {
-    if (std::find( second.begin(), second.end(), l) == second.end())
-    {
-      is_included = false;
-      break;
-    }
-  }
-  return is_included;
-}
-
-
-inline void update_fi( abs_node_t node, abstract_xag_network const& xag, std::vector<std::vector<uint32_t>>& fi, std::vector<abs_node_t> const& drivers )
-{
-
-  if ( xag.is_and( node ) || xag.is_pi(node) || (std::find(drivers.begin(), drivers.end(), node) != drivers.end()))
-  {
-    fi[ xag.abs_node_to_index(node) ] = { xag.abs_node_to_index(node) };
-  }
-
-  else
-  {      
-    std::vector<uint32_t> fanin;
-    xag.foreach_fanin(node, [&]( auto si ) {
-      fanin.push_back(xag.abs_node_to_index(xag.get_node(si)));
-    } );
-    fi[xag.abs_node_to_index( node )] = sym_diff( fi[fanin[0]], fi[fanin[1]] );
-    assert(!fi[xag.abs_node_to_index( node )].empty());
-  }
-}
-
-static inline  std::vector<std::vector<uint32_t>> get_fi (abstract_xag_network const& xag, std::vector<abs_node_t> const& drivers )
-{
-  std::vector<std::vector<uint32_t>> fi (xag.size());
-  xag.foreach_node( [&]( auto n ) {
-    update_fi(n, xag, fi, drivers);
-  });
-  return fi;
-}
-#endif
 
 inline std::vector<cone_t> get_cones( abs_node_t node, abstract_xag_network const& xag, std::vector<uint32_t> const& drivers )
 {
+  assert(xag.is_and(node));
   // I can assume that AND inputs are not complemented
   // AND I can assume that include cases have been taken care of
   // collect the cones
@@ -111,12 +54,18 @@ inline std::vector<cone_t> get_cones( abs_node_t node, abstract_xag_network cons
         auto l = xag.get_node(s);
         lsets.push_back(l);
       });
-    
     }
+    else 
+    {
+      lsets = {fi};
+    }
+    assert(!lsets.empty());
+    if(lsets.size() == 1) assert(lsets[0] == fi);
     cones.push_back({fi, lsets});
   });
 
   assert(cones.size() == 2);
+
   auto left = cones[0].leaves;
   auto right = cones[1].leaves;
 
@@ -132,10 +81,10 @@ inline std::vector<cone_t> get_cones( abs_node_t node, abstract_xag_network cons
   return cones;
 }
 
-static inline steps_xag_t gen_steps( abs_node_t node, bool compute, abstract_xag_network const& xag, std::vector<uint32_t> const& drivers)
+static inline abs_steps_xag_t gen_steps( abs_node_t node, bool compute, abstract_xag_network const& xag, std::vector<uint32_t> const& drivers)
 {
-  steps_xag_t parity_steps;
-  steps_xag_t comp_steps;
+  abs_steps_xag_t parity_steps;
+  abs_steps_xag_t comp_steps;
 
   if(xag.is_and(node))
   {
@@ -143,7 +92,7 @@ static inline steps_xag_t gen_steps( abs_node_t node, bool compute, abstract_xag
     // compute inplace xors
     for(auto cone : cones)
     {
-      if(xag.is_and(cone.root) || xag.is_pi(cone.root) || cone.leaves.size() == 0) continue;
+      if(xag.is_and(cone.root) || xag.is_pi(cone.root) || cone.leaves.size() == 1) continue;
       if ( cone.target.empty() )
       {
         parity_steps.push_back( {cone.root, compute_action{ cone.leaves, std::nullopt}} );
@@ -157,7 +106,6 @@ static inline steps_xag_t gen_steps( abs_node_t node, bool compute, abstract_xag
     comp_steps.insert(comp_steps.begin(), parity_steps.begin(), parity_steps.end());
 
   }
-  
 
   if(compute)
     comp_steps.push_back( {node, compute_action{}} );
@@ -170,91 +118,78 @@ static inline steps_xag_t gen_steps( abs_node_t node, bool compute, abstract_xag
   return comp_steps;
 }
 
-#ifdef false
+/* does not clean up possibly empty levels */
 static inline std::vector<std::vector<abs_node_t>> get_levels_asap( abstract_xag_network const& xag_t, std::vector<abs_node_t> const& drivers)
 {
-  mockturtle::depth_view<abstract_xag_network, xag_depth_cost<abstract_xag_network>> xag {xag_t};
+  depth_view<abstract_xag_network, caterpillar::xag_depth_cost<abstract_xag_network>> xag {xag_t};
 
-  std::vector<std::vector<abs_node_t>>levels (xag.depth());
-                                                                 
-  xag.foreach_gate( [&]( auto n ) {
+  /* AND nodes per level */
+  std::vector<std::vector<uint32_t>> nodes_per_level( xag.depth() );
+  xag.foreach_gate( [&]( auto const& n ) {
     if( xag.is_and(n) || std::find( drivers.begin(), drivers.end(), n ) != drivers.end() ) 
-      levels[xag.level(n)-1].push_back(n);
+    {
+      auto l = xag.level(n);
+      nodes_per_level[l - 1u].push_back( n );
+    }
   });
-
-  return levels;
+  return nodes_per_level;
 }
 
 /* get nodes per level (ALAP) */
 static inline std::vector<std::vector<abs_node_t>> get_levels_alap( abstract_xag_network const& xag_t, std::vector<abs_node_t> const& drivers)
 {
-  /* AND nodes per level */
   mockturtle::depth_view<abstract_xag_network, xag_depth_cost<abstract_xag_network>> xag {xag_t};
 
-  std::vector<std::vector<abs_node_t>>levels (xag.depth());
+  /* AND nodes per level */
+  std::vector<std::vector<uint32_t>> nodes_per_level( xag.depth() );
 
-  /* compute AND inputs of each nodes */
-  std::vector<std::vector<abs_node_t>> fanin_set (xag.size());
-
-  xag.foreach_gate( [&]( auto n ) {
-    if(xag.is_and(n) || (std::find(drivers.begin(), drivers.end(), n) != drivers.end()) )
-    {
-      fanin_set[n] = {n};
-    }
-    else 
-    {
-      std::vector<uint32_t> fanin;
-      xag.foreach_fanin(n, [&]( auto si ) {
-        fanin.push_back(xag.get_node(si));
-      });
-      
-      std::copy(fanin_set[fanin[1]].begin(),fanin_set[fanin[1]].end(), std::back_inserter(fanin_set[n]));
-
-      std::remove_copy_if( fanin_set[fanin[0]].begin(),fanin_set[fanin[0]].end(), std::back_inserter(fanin_set[n]), [&](auto i) 
-      {
-        return std::find(fanin_set[fanin[1]].begin(), fanin_set[fanin[1]].end(), i) != fanin_set[fanin[1]].end();
-      });
-
-    }
-  });
-
-  /* compute parents of and nodes */
+  /* compute parents */
   node_map<std::vector<uint32_t>, abstract_xag_network> parents( xag );
-  xag.foreach_gate( [&]( auto const& n ) {
+  xag.foreach_node( [&]( auto const& n ) {
     if ( !( xag.is_and( n ) || (std::find(drivers.begin(), drivers.end(), n) != drivers.end()) ) ) return;
 
     xag.foreach_fanin( n, [&]( auto const& f ) {
       const auto child = xag.get_node( f );
-      for(auto l : fanin_set[child])
+      if ( xag.is_and( child ) )
       {
-        parents[l].push_back(n);
+        parents[child].push_back( n );
+      }
+      else if ( xag.is_nary_xor( child ) )
+      {
+        xag.foreach_fanin( child, [&]( auto const& gf ) {
+          const auto gchild = xag.get_node( gf );
+          if ( xag.is_and( gchild ) )
+          {
+            parents[gchild].push_back( n );
+          }
+        });
       }
     });
   } );
 
   /* reverse TOPO */
   node_map<uint32_t, abstract_xag_network> level( xag );
-  for ( auto n = xag.size() - 1u; n > xag.num_pis(); --n )
+  for ( auto n = xag.size() - 1u; n > 0u; --n )
   {
     if ( !( xag.is_and( n ) || (std::find(drivers.begin(), drivers.end(), n) != drivers.end()) ) ) continue;
-    
+
     if ( parents[n].empty() )
     {
       const auto l = xag.depth() - 1u;
-      levels[l].push_back( n );
+      nodes_per_level[l].push_back( n );
       level[n] = l;
     }
     else
     {
       const auto l = level[*std::min_element( parents[n].begin(), parents[n].end(), [&]( auto n1, auto n2 ) { return level[n1] < level[n2]; } )] - 1u;
-      levels[l].push_back( n );
+      nodes_per_level[l].push_back( n );
       level[n] = l;
     }
   }
 
-  return levels;
+  return nodes_per_level;
 }
-#endif
+
 /*!
   \verbatim embed:rst
     This strategy is dedicated to XAG graphs and fault tolerant quantum computing.
@@ -301,8 +236,7 @@ public:
   }
 };
 
-#ifdef false
-class xag_fast_lowt_mapping_strategy : public mapping_strategy<abstract_xag_network>
+class abstract_xag_fast_lowt_mapping_strategy : public mapping_strategy<abstract_xag_network>
 {
 
 public:
@@ -311,21 +245,29 @@ public:
     mockturtle::topo_view xag {ntk};
 
     auto drivers = detail::get_outputs(xag);                                                     
-    auto fi  = get_fi(xag, drivers);
     auto levels = get_levels_asap(xag, drivers);
+
     auto it = steps().begin();
 
     for(auto lvl : levels)
     { 
+      assert( lvl.size() > 0 );
       /* store two action sets for each node in the level */
       std::vector<std::pair<uint32_t, std::vector<cone_t>>> node_and_action;      
       std::vector<std::pair<uint32_t, std::vector<cone_t>>> to_be_uncomputed;
 
       for(auto n : lvl)
       {
-        /* this strategy does not support symplification of an included fanin cone, hence the false flag */
-        auto cones = get_cones(n, xag, fi, false);
-        node_and_action.push_back({n, cones});
+        /* nary xor outs have empty cones */
+        if(xag.is_and(n))
+        {
+          auto cones = get_cones(n, xag, drivers);
+          node_and_action.push_back({n, cones });
+        }
+        else
+        {
+          node_and_action.push_back({n, {}});
+        }
       }
 
       it = steps().insert(it, {lvl[0], compute_level_action{node_and_action}});
@@ -342,8 +284,6 @@ public:
     return true;
   }
 };
-
-
 /*!
   \verbatim embed:rst
     This strategy is dedicated to XAG graphs and fault tolerant quantum computing.
@@ -351,11 +291,12 @@ public:
     Every level uses some extra-qubits to copy AND inputs.
   \endverbatim
 */
-class xag_low_depth_mapping_strategy : public mapping_strategy<abstract_xag_network>
+class abstract_xag_low_depth_mapping_strategy : public mapping_strategy<abstract_xag_network>
 {
 
   void eval_copies(std::vector<cone_t>& cones, boost::dynamic_bitset<>& visited)
   {
+    //problem gere as leaves are empty when there is a direct ling
     for(auto& cone : cones) 
     {
       for (auto l : cone.leaves )
@@ -380,7 +321,7 @@ class xag_low_depth_mapping_strategy : public mapping_strategy<abstract_xag_netw
 
 public: 
   
-  xag_low_depth_mapping_strategy (bool use_alap = false)
+  abstract_xag_low_depth_mapping_strategy (bool use_alap = false)
   : _alap(use_alap){}
 
   bool compute_steps( abstract_xag_network const& ntk ) override
@@ -389,17 +330,13 @@ public:
     mockturtle::topo_view xag {ntk};
 
     auto drivers = detail::get_outputs(xag);
-
-    /* iterate the xag to extract transitive fanin cones for all nodes */
-    auto fi = get_fi(xag, drivers);
-
-    /* each m_level is filled with AND nodes and XOR outputs */
     auto levels = _alap ? get_levels_alap(xag, drivers) : get_levels_asap(xag, drivers);
+
     auto it = steps().begin();
 
-    for(auto lvl : levels){ if(lvl.size() != 0)
+    for(auto lvl : levels)
     {
-
+      assert( lvl.size() > 0 );
       /* store two action sets for each node in the level */
       std::vector<std::pair<uint32_t, std::vector<cone_t>>> node_and_action;      
       std::vector<std::pair<uint32_t, std::vector<cone_t>>> to_be_uncomputed;
@@ -408,14 +345,20 @@ public:
       boost::dynamic_bitset<> visited (xag.size());
       for(auto n : lvl)
       {
-        /* this strategy does not support symplification of an included fanin cone, hence the false flag */
-        auto cones = get_cones(n, xag, fi, false);
         if(xag.is_and(n))
         {
-          /* modifies cones.leaves and cones.copies according to visited */
-          eval_copies(cones, visited);
+          auto cones = get_cones(n, xag, drivers);
+          if(xag.is_and(n))
+          {
+            /* modifies cones.leaves and cones.copies according to visited */
+            eval_copies(cones, visited);
+          }
+          node_and_action.push_back({n, cones});
         }
-        node_and_action.push_back({n, cones});
+        else
+        {
+          node_and_action.push_back({n, {}});
+        }
       }
 
       it = steps().insert(it, {lvl[0], compute_level_action{node_and_action}});
@@ -428,8 +371,6 @@ public:
       }
       it = steps().insert(it, {lvl[0], uncompute_level_action{to_be_uncomputed}});
       
-    }
-    
     }
     return true;
   }
@@ -444,19 +385,23 @@ public:
   \endverbatim
 */
 
-class xag_depth_fit_mapping_strategy : public mapping_strategy<abstract_xag_network>
+class abstract_xag_depth_fit_mapping_strategy : public mapping_strategy<abstract_xag_network>
 {
 
   std::vector<boost::dynamic_bitset<>> get_mask( 
-  std::vector<uint64_t> const& lvl, 
-  abstract_xag_network const& xag, 
-  std::vector<std::vector<uint32_t>> const& fi)
+      std::vector<uint32_t> const& lvl, 
+      abstract_xag_network const& xag, 
+      std::vector<uint32_t> const& drivers)
   {
     std::vector<boost::dynamic_bitset<>> masks (lvl.size());
     for(uint32_t i = 0; i < lvl.size(); i++)
     {  
       masks[i].resize(xag.size());
-      auto cones = get_cones(lvl[i], xag, fi, false);  
+
+      // nary xors will result compatible with any other node in the level
+      if(xag.is_nary_xor(lvl[i])) continue;
+
+      auto cones = get_cones(lvl[i], xag, drivers);  
       for (auto l : cones[0].leaves)
       {
         assert(masks[i].size() > l);
@@ -471,9 +416,13 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<abstract_xag_netw
     return masks;
   }
 
-  void build_compatibility_graph(igraph_t* g, std::vector<uint64_t> const& lvl, abstract_xag_network const& xag, std::vector<std::vector<uint32_t>> const& fi)
+  void build_compatibility_graph(
+      igraph_t* g, 
+      std::vector<uint32_t> const& lvl, 
+      abstract_xag_network const& xag, 
+      std::vector<uint32_t> const& drivers)
   {
-    auto conflicts = get_mask(lvl, xag, fi);
+    auto conflicts = get_mask(lvl, xag, drivers);
 
     /* build the graph comparing the masks */
     igraph_integer_t nv = lvl.size();
@@ -582,15 +531,12 @@ class xag_depth_fit_mapping_strategy : public mapping_strategy<abstract_xag_netw
 
   /* records the largest clique size that is the maximum amount of qubits added by a Tdepth=1 implementation 
   as smaller cliques can reuse it */
-  uint32_t qubits_offset = 0;
   uint32_t size_limit= std::numeric_limits<uint>::max();
 
 public: 
 
-  xag_depth_fit_mapping_strategy(uint32_t max_size_comp_graph = std::numeric_limits<uint>::max())
+  abstract_xag_depth_fit_mapping_strategy(uint32_t max_size_comp_graph = std::numeric_limits<uint>::max())
   : size_limit(max_size_comp_graph) {}
-
-  uint32_t get_offset() { return qubits_offset;}
 
   bool compute_steps( abstract_xag_network const& ntk ) override
   {
@@ -601,8 +547,6 @@ public:
     mockturtle::topo_view xag {ntk};
 
     auto drivers = detail::get_outputs(xag);
-
-    auto fi = get_fi (xag, drivers);
     
     /* each m_level is filled with AND nodes and XOR outputs */
     /* fi is propagated */
@@ -618,7 +562,7 @@ public:
       igraph_vector_ptr_t subgraphs; 
       igraph_vector_ptr_init(&subgraphs, 0);
 
-      build_compatibility_graph(&graph, lvl, xag, fi);
+      build_compatibility_graph(&graph, lvl, xag, drivers);
       
       decompose_graph_cc(&graph, &subgraphs, size_limit);
 
@@ -634,7 +578,10 @@ public:
 
           for(auto n : clique)
           {
-            to_be_computed.push_back({n, get_cones(n, xag, fi, false)});
+            if(xag.is_and(n))
+              to_be_computed.push_back({n, get_cones(n, xag, drivers)});
+            else
+              to_be_computed.push_back({n, {}});
           }
 
           it = steps().insert(it, {clique[0], compute_level_action{to_be_computed}});
@@ -643,13 +590,13 @@ public:
           for(auto& n : clique)
           {
             if(std::find(drivers.begin(), drivers.end(), n) == drivers.end())
-              to_be_uncomputed.push_back({n, get_cones(n, xag, fi, false)});
+            {
+              assert(xag.is_and(n));
+              to_be_uncomputed.push_back({n, get_cones(n, xag, drivers)});
+            }
           }
 
           it = steps().insert(it, {clique[0], uncompute_level_action{to_be_uncomputed}});
-
-          if(clique.size()>qubits_offset)
-            qubits_offset = clique.size();
         }
       }
 
@@ -660,6 +607,5 @@ public:
     return true;
   }
 };
-#endif
 #endif
 } // namespace caterpillar

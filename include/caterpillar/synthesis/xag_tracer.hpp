@@ -42,10 +42,18 @@ struct xag_tracer_params
 
 struct xag_tracer_stats
 {
+  /*! \brief Number of CNOT gates. */
   int CNOT_count{0};
+
+  /*! \brief Number of T gates. */
   int T_count{0};
+
+  /*! \brief Number of T stages. */
   int T_depth{0};
+
+  /*! \brief Number of qubits. */
   int qubit_count{0};
+
   /*! \brief Total runtime. */
   mockturtle::stopwatch<>::duration time_total{0};
 
@@ -67,13 +75,14 @@ struct xag_tracer_stats
 namespace detail
 {
 
+template<class Ntk>
 class xag_tracer_impl
 {
-  using node_t = typename mt::xag_network::node;
-  using signal_t = typename mt::xag_network::signal;
+  using node_t = typename Ntk::node;
+  using signal_t = typename Ntk::signal;
 public:
-  xag_tracer_impl( mt::xag_network const& ntk,
-                                mapping_strategy<mt::xag_network>& strategy,
+  xag_tracer_impl( Ntk const& ntk,
+                                mapping_strategy<Ntk>& strategy,
                                 xag_tracer_params const& ps,
                                 xag_tracer_stats& st )
       : ntk( ntk ), strategy( strategy ), ps( ps ), st( st )
@@ -386,7 +395,6 @@ private:
 
   void compute_node( node_t const& node, uint32_t t)
   {
-
     if ( ntk.is_and( node ) )
     {
       auto controls = get_fanin_as_literals<2>( node );
@@ -400,7 +408,6 @@ private:
       compute_and( pol_controls, t );
       return;
     }
-  
     if ( ntk.is_xor( node ) )
     {
       
@@ -410,7 +417,18 @@ private:
                     ( controls[0] & 1 ) != ( controls[1] & 1 ), t );
       return;
     }
-    
+    if ( ntk.is_nary_xor( node ) )
+    {
+      
+      std::vector<uint32_t> controls;
+      controls.reserve( ntk.fanin_size(node) );
+      ntk.foreach_fanin(node, [&] (auto f)
+      {
+        controls.push_back(ntk.get_node(f));
+      });
+      compute_big_xor( t, controls);
+      return;
+    }
   }
 
 
@@ -469,7 +487,18 @@ private:
   void compute_copies ( std::map<node_t, std::vector<uint32_t>>& id_to_tcp,  caterpillar::level_info_t const& level)
   {
     for(auto node : level)
-    {      
+    { 
+      auto &id = node.first;
+      if(ntk.is_nary_xor(id))
+      {
+        std::vector<uint32_t> fanins;
+        ntk.foreach_fanin(id, [&] (auto f)
+        {
+          fanins.push_back(ntk.get_node(f));
+        });
+        id_to_tcp[id] = fanins;
+        continue;
+      }     
       std::vector<uint32_t> roots_targets (2);
       for(auto i = 0; i < 2 ; i++)
       {
@@ -479,6 +508,7 @@ private:
           if(cone.leaves.size() == 1)
           {
             roots_targets[i] = node_to_qubit[cone.leaves[0]].top();
+            continue;
           }
           else
           {
@@ -492,7 +522,7 @@ private:
           roots_targets[i] = tcp;
         }
       }
-      id_to_tcp[node.first] = roots_targets;
+      id_to_tcp[id] = roots_targets;
     }
   }
 
@@ -500,6 +530,8 @@ private:
   {
     for(auto node : level)
     {
+      if(ntk.is_nary_xor(node.first)) continue;
+
       for(auto i = 0; i < 2 ; i++)
       {
         auto cone = node.second[i];
@@ -537,12 +569,21 @@ private:
     std::map<node_t, std::vector<uint32_t>> id_to_tcp;
     compute_copies(id_to_tcp, level);
     std::vector<uint32_t> qubit_offset;
-    
+
     for(auto node : level)
     {      
       auto &id = node.first;
+      auto target = request_ancilla();
+
+      /* nary xor nodes directly point to AND nodes */
+      if(ntk.is_nary_xor(id))
+      {
+        compute_node(id, target);
+        node_to_qubit[id].push(target);
+        continue;
+      }
+
       SetQubits pol_controls; 
-      
       for(auto i = 0; i < 2 ; i++)
       {
         auto &cone = node.second[i];
@@ -558,7 +599,7 @@ private:
         node_to_qubit[cone.root].push(tcp);
       }
 
-      auto target = request_ancilla();
+
       //  automatically take into account the extra qubit needed 
       //  for the AND implementation with T-depth = 1
       if (ntk.is_and(id))
@@ -593,13 +634,14 @@ private:
     
     for (auto q : qubit_offset)
       release_ancilla(q);
-    remove_copies(id_to_tcp, level);
 
+    remove_copies(id_to_tcp, level);
   }
 
   void uncompute_level(caterpillar::level_info_t const& level)
   {
     //reverse the orther of the cones
+    // only AND nodes are uncomputed
     for(int n = level.size()-1; n >=0; n--)
     {
       SetQubits pol_controls; 
@@ -609,8 +651,8 @@ private:
       for(auto i = 0; i < 2 ; i++)
       {
         auto &cone = level[n].second[i];
-
-        if(cone.leaves.size() <= 1)
+        
+        if(cone.leaves.size() == 1)
         {
           pol_controls.emplace_back(node_to_qubit[cone.leaves[0]].top(), cone.complemented);
           continue;
@@ -626,17 +668,16 @@ private:
       auto target = node_to_qubit[id].top();
       compute_and_xor_from_controls(id, pol_controls, target);
       node_to_qubit[id].pop();
+
       for(int i = 1; i >= 0 ; i--)
       {
         auto &cone = level[n].second[i];
-        if(cone.leaves.size() <= 1) continue;
+        if(cone.leaves.size() == 1) continue;
 
-        auto &root = cone.root; 
-        auto t = node_to_qubit[root].top();
+        auto t = node_to_qubit[cone.root].top();
 
         compute_big_xor(t, cone.leaves);
-        node_to_qubit[root].pop();
-
+        node_to_qubit[cone.root].pop();
       }
     }
 
@@ -644,8 +685,8 @@ private:
 
 
 private:
-  mt::xag_network const& ntk;
-  mapping_strategy<mt::xag_network>& strategy;
+  Ntk const& ntk;
+  mapping_strategy<Ntk>& strategy;
 
   xag_tracer_params const& ps;
   xag_tracer_stats& st;
@@ -671,8 +712,9 @@ private:
  * component `MappingStrategy` that is passed as template parameter to the
  * function.
  */
-static bool xag_tracer(  mockturtle::xag_network const& ntk,
-                              mapping_strategy<mockturtle::xag_network>& strategy,
+template<class Ntk>
+static bool xag_tracer(  Ntk const& ntk,
+                              mapping_strategy<Ntk>& strategy,
                               xag_tracer_params const& ps = {},
                               xag_tracer_stats* pst = nullptr )
 {
@@ -684,7 +726,7 @@ static bool xag_tracer(  mockturtle::xag_network const& ntk,
   if constexpr (std::is_same_v<decltype(strategy), xag_fast_lowt_mapping_strategy>){ assert( !ps.low_tdepth_AND ); }
   if constexpr (std::is_same_v<decltype(strategy), xag_pebbling_mapping_strategy>) { assert( !ps.low_tdepth_AND ); }
 
-  detail::xag_tracer_impl impl( ntk, strategy, ps, st);
+  detail::xag_tracer_impl<Ntk> impl( ntk, strategy, ps, st);
                                                                                                                                                                                      
   const auto result = impl.run();
   if ( ps.verbose )

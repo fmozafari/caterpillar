@@ -320,14 +320,6 @@ private:
     }
   }
 
-  void copy_node( std::vector<uint32_t> copies, uint32_t t )
-  {
-    for( auto cp : copies)
-    {
-      assert(node_to_qubit[cp].top() != t);
-      qnet.add_gate( tweedledum::gate::cx, tweedledum::qubit_id( node_to_qubit[cp].top() ), tweedledum::qubit_id( t ) );
-    }
-  }
 
   void compute_node( mt::node<LogicNetwork> const& node, uint32_t t)
   {
@@ -662,7 +654,18 @@ private:
   void compute_copies ( std::map<node_t, std::vector<uint32_t>>& id_to_tcp,  caterpillar::level_info_t const& level)
   {
     for(auto node : level)
-    {      
+    { 
+      auto &id = node.first;
+      if(ntk.is_nary_xor(id))
+      {
+        std::vector<uint32_t> fanins;
+        ntk.foreach_fanin(id, [&] (auto f)
+        {
+          fanins.push_back(ntk.get_node(f));
+        });
+        id_to_tcp[id] = fanins;
+        continue;
+      }     
       std::vector<uint32_t> roots_targets (2);
       for(auto i = 0; i < 2 ; i++)
       {
@@ -672,6 +675,7 @@ private:
           if(cone.leaves.size() == 1)
           {
             roots_targets[i] = node_to_qubit[cone.leaves[0]].top();
+            continue;
           }
           else
           {
@@ -685,7 +689,7 @@ private:
           roots_targets[i] = tcp;
         }
       }
-      id_to_tcp[node.first] = roots_targets;
+      id_to_tcp[id] = roots_targets;
     }
   }
 
@@ -693,6 +697,7 @@ private:
   {
     for(auto node : level)
     {
+      if(ntk.is_nary_xor(node.first)) continue;
       for(auto i = 0; i < 2 ; i++)
       {
         auto cone = node.second[i];
@@ -705,7 +710,6 @@ private:
           qnet.add_gate(tweedledum::gate::cx, tweedledum::qubit_id( node_to_qubit[c].top() ), tcp );
         }
         release_ancilla(tcp);
-
       }
     }
   }
@@ -724,50 +728,9 @@ private:
     }
   }
 
-  int qc_stats( bool use_tdepth1 = true)
-  {
-
-    std::vector<int> depths (qnet.num_qubits());
-        
-
-    qnet.foreach_cgate([&] (auto& gate)
-    {
-      assert(gate.gate.num_controls() <= 2);
-      auto t = gate.gate.targets()[0];
-
-      if (gate.gate.num_controls() == 1)
-      {
-        auto c = gate.gate.controls()[0];
-        depths[t] = std::max(depths[c], depths[t]);
-      }
-      else if(gate.gate.num_controls() == 2)
-      {
-        auto c1 = gate.gate.controls()[0];
-        auto c2 = gate.gate.controls()[1];
-
-        
-        depths[t] = use_tdepth1 ? std::max(std::max(depths[t] + 1, depths[c1]+1), depths[c2]+1)  : std::max(std::max(depths[t] + 2, depths[c1]+1), depths[c2]+1);
-
-        gate.gate.foreach_control([&] (auto& c)
-        {
-          depths[c] = depths[c] + 1;
-        });
-          
-        
-      }
-
-    });
-
-    
-    auto Tdepth = depths[std::max_element(depths.begin(), depths.end()) - depths.begin()];
-    
-    return Tdepth; 
-  }
-
   void compute_level_with_copies(caterpillar::level_info_t const& level)
   {      
 
-    
     std::map<node_t, std::vector<uint32_t>> id_to_tcp;
     compute_copies(id_to_tcp, level);
     std::vector<uint32_t> qubit_offset;
@@ -776,8 +739,17 @@ private:
     for(auto node : level)
     {      
       auto &id = node.first;
+      auto target = request_ancilla();
+
+      /* nary xor nodes directly point to AND nodes */
+      if(ntk.is_nary_xor(id))
+      {
+        compute_node(id, target);
+        node_to_qubit[id].push(target);
+        continue;
+      }
+
       SetQubits pol_controls; 
-      
       for(auto i = 0; i < 2 ; i++)
       {
         auto &cone = node.second[i];
@@ -793,7 +765,6 @@ private:
         node_to_qubit[cone.root].push(tcp);
       }
 
-      auto target = request_ancilla();
 
       //  automatically take into account the extra qubit needed 
       //  for the AND implementation with T-depth = 1
@@ -832,13 +803,12 @@ private:
 
     remove_copies(id_to_tcp, level);
 
-    
-
   }
 
   void uncompute_level(caterpillar::level_info_t const& level)
   {
     //reverse the orther of the cones
+    // only AND nodes are uncomputed
     for(int n = level.size()-1; n >=0; n--)
     {
       SetQubits pol_controls; 
@@ -848,8 +818,8 @@ private:
       for(auto i = 0; i < 2 ; i++)
       {
         auto &cone = level[n].second[i];
-
-        if(cone.leaves.size() <= 1)
+        
+        if(cone.leaves.size() == 1)
         {
           pol_controls.emplace_back(node_to_qubit[cone.leaves[0]].top(), cone.complemented);
           continue;
@@ -865,17 +835,16 @@ private:
       auto target = node_to_qubit[id].top();
       compute_and_xor_from_controls(id, pol_controls, target);
       node_to_qubit[id].pop();
+
       for(int i = 1; i >= 0 ; i--)
       {
         auto &cone = level[n].second[i];
-        if(cone.leaves.size() <= 1) continue;
+        if(cone.leaves.size() == 1) continue;
 
-        auto &root = cone.root; 
-        auto t = node_to_qubit[root].top();
+        auto t = node_to_qubit[cone.root].top();
 
         compute_big_xor(t, cone.leaves);
-  node_to_qubit[root].pop();
-
+        node_to_qubit[cone.root].pop();
       }
     }
 

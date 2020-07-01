@@ -45,6 +45,7 @@
 
 #include "../traits.hpp"
 #include "../utils/algorithm.hpp"
+#include "../utils/include/spp.hpp"
 #include "detail/foreach.hpp"
 
 namespace mockturtle

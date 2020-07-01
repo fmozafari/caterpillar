@@ -51,6 +51,7 @@
 #include <tweedledum/networks/netlist.hpp>
 #include <mockturtle/algorithms/simulation.hpp>
 #include <mockturtle/networks/xag.hpp>
+#include <mockturtle/networks/abstract_xag.hpp>
 #include <kitty/dynamic_truth_table.hpp>
 #include <mockturtle/algorithms/equivalence_checking.hpp>
 #include <mockturtle/algorithms/miter.hpp>
@@ -404,12 +405,12 @@ std::optional<bool> check_equivalence_ntk(Ntk const& ntk, tweedledum::netlist<ca
   }
 }
 
-
+template<typename Ntk>
 struct xag_stats
 {
-  xag_stats(xag_network const& ntk)
+  xag_stats(Ntk const& ntk)
   {
-    depth_view<xag_network, caterpillar::and_depth_cost<xag_network>> xag {ntk};
+    depth_view<Ntk, caterpillar::and_depth_cost<Ntk>> xag {ntk};
 
     std::vector<uint32_t> lvls (xag.depth());
 
@@ -419,7 +420,7 @@ struct xag_stats
         lvls[xag.level(n)-1]++; 
         n_and++;
       }
-      else if(ntk.is_xor(n))
+      else if(ntk.is_nary_xor(n) || ntk.is_xor(n))
       {
         n_xor++;
       }
@@ -439,7 +440,6 @@ struct xag_stats
   uint32_t mult_depth = 0;
   uint32_t mult_width = 0;
 };
-
 
 
 } // namespace experiments
