@@ -150,7 +150,7 @@ static inline std::vector<std::vector<abs_node_t>> get_levels_alap( abstract_xag
 
     xag.foreach_fanin( n, [&]( auto const& f ) {
       const auto child = xag.get_node( f );
-      if ( xag.is_and( child ) )
+      if ( xag.is_and( child ) || (std::find(drivers.begin(), drivers.end(), child) != drivers.end()) )
       {
         parents[child].push_back( n );
       }
@@ -186,6 +186,15 @@ static inline std::vector<std::vector<abs_node_t>> get_levels_alap( abstract_xag
       level[n] = l;
     }
   }
+  xag.foreach_gate([&] (auto gate)
+  {
+    auto alap_level = level[gate];
+    xag.foreach_fanin(gate, [&] (auto f)
+    {
+      auto fgate = xag.get_node(f);
+      assert( level[fgate] < alap_level);
+    });
+  });
 
   return nodes_per_level;
 }
@@ -334,13 +343,11 @@ public:
 
     auto it = steps().begin();
 
-    for(auto lvl : levels)
+    for(auto lvl : levels) if(lvl.size() > 0 ) {
     {
-      assert( lvl.size() > 0 );
       /* store two action sets for each node in the level */
       std::vector<std::pair<uint32_t, std::vector<cone_t>>> node_and_action;      
       std::vector<std::pair<uint32_t, std::vector<cone_t>>> to_be_uncomputed;
-
 
       boost::dynamic_bitset<> visited (xag.size());
       for(auto n : lvl)
@@ -371,6 +378,7 @@ public:
       }
       it = steps().insert(it, {lvl[0], uncompute_level_action{to_be_uncomputed}});
       
+    }
     }
     return true;
   }

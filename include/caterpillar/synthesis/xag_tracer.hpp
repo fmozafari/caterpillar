@@ -43,16 +43,16 @@ struct xag_tracer_params
 struct xag_tracer_stats
 {
   /*! \brief Number of CNOT gates. */
-  int CNOT_count{0};
+  uint32_t CNOT_count{0};
 
   /*! \brief Number of T gates. */
-  int T_count{0};
+  uint32_t T_count{0};
 
   /*! \brief Number of T stages. */
-  int T_depth{0};
+  uint32_t T_depth{0};
 
   /*! \brief Number of qubits. */
-  int qubit_count{0};
+  uint32_t qubit_count{0};
 
   /*! \brief Total runtime. */
   mockturtle::stopwatch<>::duration time_total{0};
@@ -192,8 +192,7 @@ public:
                 {
                   fmt::print("[i] compute level with node {}\n", action.level[0].first);
                 }
-     
-   
+
                 compute_level_with_copies(action.level);
               },
               [&] (uncompute_level_action& action){
